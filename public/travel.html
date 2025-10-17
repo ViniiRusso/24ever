@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="format-detection" content="telephone=no">
+  <title>24ever — Our Travels</title>
+
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <style>
+    #map { height: calc(100svh - 180px); border-radius: 1rem; overflow: hidden; }
+    .map-wrap { background: var(--glass); border:1px solid rgba(255,255,255,.7); border-radius:1rem; padding: .75rem; }
+    .leaflet-container { background: rgba(255,255,255,.55); }
+    .legend-dot { display:inline-block; width:12px; height:12px; border-radius:999px; background:#ec4899; vertical-align:middle; margin-right:6px; }
+    .toolbar .btn { font-size:.9rem; }
+    .import-box { display:none; }
+    .import-box.show { display:block; }
+  </style>
+</head>
+<body class="pb-24">
+  <!-- NAVBAR unificada -->
+  <nav class="nav fixed top-0 left-0 right-0 z-50">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <a href="/" class="brand">24ever</a>
+      <button class="hamb" aria-label="Abrir menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="links">
+        <a href="/">Home</a>
+        <a href="/#contador">Countdown</a>
+        <a href="/#timeline">Our Moments</a>
+        <a href="/games">Games</a>
+        <a href="/calendar">Our Calendar</a>
+        <a href="/links">Links</a>
+        <a href="/travel">Our Travels</a>
+        <form action="/logout" method="post" class="logout"><button> sair </button></form>
+      </div>
+    </div>
+  </nav>
+  <aside id="drawer" class="drawer">
+    <div class="drawer-inner">
+      <a href="/" class="drawer-link">Home</a>
+      <a href="/#contador" class="drawer-link">Countdown</a>
+      <a href="/#timeline" class="drawer-link">Our Moments</a>
+      <a href="/games" class="drawer-link">Games</a>
+      <a href="/calendar" class="drawer-link">Our Calendar</a>
+      <a href="/links" class="drawer-link">Links</a>
+      <a href="/travel" class="drawer-link">Our Travels</a>
+      <form action="/logout" method="post"><button class="drawer-link">sair</button></form>
+    </div>
+  </aside>
+
+  <main class="max-w-6xl mx-auto px-4 pt-24">
+    <header class="flex items-end justify-between mb-4">
+      <div>
+        <h1 class="text-2xl font-extrabold">Our Travels</h1>
+        <p class="text-sm text-gray-600 mt-1">Toque/Clique nos países para marcar as viagens 💖</p>
+      </div>
+      <div class="text-sm text-gray-600">
+        <span class="legend-dot"></span> Visitado • <span id="visitedCount">0</span> países
+      </div>
+    </header>
+
+    <div class="toolbar flex flex-wrap gap-2 mb-4">
+      <button id="btnReset" class="btn">Limpar tudo</button>
+      <button id="btnExport" class="px-3 py-2 rounded-xl bg-pink-100 text-pink-700">Exportar JSON</button>
+      <button id="btnImport" class="px-3 py-2 rounded-xl bg-pink-100 text-pink-700">Importar JSON</button>
+    </div>
+
+    <div class="import-box glass p-3 mb-4" id="importBox">
+      <label class="block text-sm text-gray-600 mb-1">Cole aqui o JSON exportado:</label>
+      <textarea id="importText" class="w-full p-2 border rounded" rows="4"></textarea>
+      <div class="mt-2 flex gap-2">
+        <button id="confirmImport" class="btn">Aplicar</button>
+        <button id="cancelImport" class="px-3 py-2 rounded-xl bg-gray-100">Cancelar</button>
+      </div>
+    </div>
+
+    <div class="map-wrap">
+      <div id="map" role="region" aria-label="Mapa mundi interativo"></div>
+    </div>
+  </main>
+
+  <div id="audioBar" class="bg-white/80 border-t p-2 fixed bottom-0 left-0 right-0 flex items-center gap-3">
+    <button id="playPause" class="px-3 py-1 rounded-lg bg-pink-500 text-white text-sm">Tocar</button>
+    <input id="volume" type="range" min="0" max="1" step="0.01" value="0.6" />
+    <span id="currentTrack" class="text-xs text-gray-600"></span>
+    <audio id="bgm" preload="auto"></audio>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="/js/navbar.js"></script>
+  <script src="/js/main.js"></script>
+  <script src="/js/travel.js"></script>
+</body>
+</html>

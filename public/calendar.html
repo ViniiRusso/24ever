@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="format-detection" content="telephone=no">
+  <title>24ever — Our Calendar</title>
+
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/aos@2.3.1/dist/aos.css" />
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
+
+  <style>
+    .fc .fc-toolbar-title { font-weight:700; color:#0f172a; }
+    .fc-event { background:#fb7185; border:none; color:#fff; border-radius:10px; padding:4px 6px; }
+    .fc-daygrid-event-dot { display:none; }
+    .fc .fc-button-primary { background:#ec4899; border:0; }
+    .fc .fc-button-primary:not(:disabled):hover { filter:brightness(.95); }
+  </style>
+</head>
+<body class="pb-24">
+  <div class="blob b1"></div><div class="blob b2"></div>
+
+  <!-- NAVBAR unificada -->
+  <nav class="nav fixed top-0 left-0 right-0 z-50">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <a href="/" class="brand">24ever</a>
+      <button class="hamb" aria-label="Abrir menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="links">
+        <a href="/">Home</a>
+        <a href="/#contador">Countdown</a>
+        <a href="/#timeline">Our Moments</a>
+        <a href="/games">Games</a>
+        <a href="/calendar">Our Calendar</a>
+        <a href="/links">Links</a>
+        <a href="/travel">Our Travels</a>
+        <form action="/logout" method="post" class="logout"><button> sair </button></form>
+      </div>
+    </div>
+  </nav>
+  <aside id="drawer" class="drawer">
+    <div class="drawer-inner">
+      <a href="/" class="drawer-link">Home</a>
+      <a href="/#contador" class="drawer-link">Countdown</a>
+      <a href="/#timeline" class="drawer-link">Our Moments</a>
+      <a href="/games" class="drawer-link">Games</a>
+      <a href="/calendar" class="drawer-link">Our Calendar</a>
+      <a href="/links" class="drawer-link">Links</a>
+      <a href="/travel" class="drawer-link">Our Travels</a>
+      <form action="/logout" method="post"><button class="drawer-link">sair</button></form>
+    </div>
+  </aside>
+
+  <main class="max-w-6xl mx-auto px-4 pt-24 pb-10">
+    <div class="flex items-end justify-between mb-6" data-aos="fade-up">
+      <div>
+        <h1 class="text-3xl font-extrabold">Our Calendar</h1>
+        <p class="text-sm text-gray-600 mt-1">Adicione eventos para usarmos juntos 💖</p>
+      </div>
+      <div class="hidden sm:block text-xs text-gray-500"><span id="tzLabel"></span></div>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-6">
+      <div class="glass p-4" data-aos="fade-right">
+        <h3 class="font-semibold mb-2">Criar evento</h3>
+        <form id="evtForm" class="space-y-2">
+          <div>
+            <label class="text-xs text-gray-600">Título</label>
+            <input id="evTitle" class="w-full p-2 border rounded mt-1" required />
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-600">Início</label>
+              <input id="evStart" type="datetime-local" class="w-full p-2 border rounded mt-1" required />
+            </div>
+            <div>
+              <label class="text-xs text-gray-600">Fim (opcional)</label>
+              <input id="evEnd" type="datetime-local" class="w-full p-2 border rounded mt-1" />
+            </div>
+          </div>
+          <label class="inline-flex items-center gap-2 mt-1">
+            <input id="evAll" type="checkbox" />
+            <span class="text-sm">Evento o dia todo</span>
+          </label>
+
+          <div class="flex items-center gap-2 pt-2">
+            <button class="btn" type="submit">Adicionar evento</button>
+            <button id="clearForm" type="button" class="px-3 py-2 rounded-xl bg-pink-100 text-pink-700 text-sm">Limpar</button>
+          </div>
+        </form>
+
+        <hr class="my-4" />
+        <div>
+          <h4 class="font-semibold mb-2">Eventos recentes</h4>
+          <div id="eventsList" class="space-y-2 text-sm text-gray-700"></div>
+        </div>
+      </div>
+
+      <div class="md:col-span-2 glass p-4" data-aos="fade-left">
+        <div id="calendar" class="rounded-xl overflow-hidden"></div>
+      </div>
+    </div>
+  </main>
+
+  <div id="audioBar" class="bg-white/80 border-t p-2 fixed bottom-0 left-0 right-0 flex items-center gap-3">
+    <button id="playPause" class="px-3 py-1 rounded-lg bg-pink-500 text-white text-sm">Tocar</button>
+    <input id="volume" type="range" min="0" max="1" step="0.01" value="0.6" />
+    <span id="currentTrack" class="text-xs text-gray-600"></span>
+    <audio id="bgm" preload="auto"></audio>
+  </div>
+
+  <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+  <script src="/js/navbar.js"></script>
+  <script src="/js/main.js"></script>
+  <script src="/js/calendar.js"></script>
+</body>
+</html>

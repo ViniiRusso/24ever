@@ -1,0 +1,147 @@
+:root{
+  --pink:#fce7ef; --blue:#dbeafe; --accent:#ec4899;
+  --glass: rgba(255,255,255,.6);
+  --text:#0f172a;
+}
+html,body{height:100%}
+html{ -webkit-text-size-adjust:100%; scroll-behavior:auto; touch-action:manipulation; }
+*{ -webkit-tap-highlight-color:transparent; }
+
+body{
+  margin:0;
+  font-family:Poppins,system-ui,Arial;
+  background:linear-gradient(120deg,var(--pink),#fff,var(--blue));
+  background-size:300% 300%;
+  animation:grad 14s ease infinite;
+  color:var(--text);
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  overscroll-behavior-y: contain;
+}
+@keyframes grad{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+
+.blob{position:fixed;filter:blur(40px);opacity:.45;z-index:-1;pointer-events:none;}
+.b1{width:420px;height:420px;left:-120px;top:-80px;background:#fecdd3;animation:float 18s ease-in-out infinite;border-radius:50%;}
+.b2{width:380px;height:380px;right:-120px;bottom:-80px;background:#c7d2fe;animation:float 22s ease-in-out infinite reverse;border-radius:50%;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-24px)}}
+
+/* NAVBAR */
+.nav{
+  position:fixed; top:0; left:0; right:0; z-index:50;
+  backdrop-filter:saturate(140%) blur(8px);
+  -webkit-backdrop-filter:saturate(140%) blur(8px);
+  padding-top: env(safe-area-inset-top);
+  background: rgba(255,255,255,.7);
+  border-bottom: 1px solid rgba(0,0,0,.05);
+}
+.brand{ font-weight:900; color:#ec4899; letter-spacing:.2px; text-decoration:none; }
+.nav .links{ display:flex; gap:18px; align-items:center; }
+.nav .links a{ text-decoration:none; color:inherit; font-size:14px; }
+.nav .links .logout button{ font-size:12px; color:#6b7280; }
+
+/* HAMBURGER */
+.hamb{
+  display:flex; width:40px;height:40px;border:0;border-radius:10px;
+  background:rgba(0,0,0,.04); gap:5px;flex-direction:column;align-items:center;justify-content:center;
+  transition:background .2s ease; cursor:pointer;
+}
+.hamb:hover{ background:rgba(0,0,0,.08); }
+.hamb span{ width:22px; height:2px; border-radius:2px; background:#0f172a; transition:transform .25s ease, opacity .25s ease; }
+.hamb[aria-expanded="true"] span:nth-child(1){ transform:translateY(7px) rotate(45deg); }
+.hamb[aria-expanded="true"] span:nth-child(2){ opacity:0; }
+.hamb[aria-expanded="true"] span:nth-child(3){ transform:translateY(-7px) rotate(-45deg); }
+@media(min-width:901px){ .hamb{ display:flex; } } /* sempre visível */
+@media(max-width:900px){ .nav .links{ display:none !important; } }
+
+/* Drawer */
+.drawer{ position:fixed; inset:0; z-index:60; display:none; background: rgba(15,23,42,.15);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.drawer.show{ display:block; }
+.drawer-inner{
+  position:absolute; top:calc(env(safe-area-inset-top) + 10px); right:10px;
+  width:min(280px, 86vw);
+  background: rgba(255,255,255,.85);
+  border:1px solid rgba(0,0,0,.06);
+  border-radius:16px;
+  box-shadow:0 30px 80px rgba(2,6,23,.18);
+  padding:12px;
+  transform: translateY(-10px) scale(.98);
+  opacity:0;
+  transition: transform .26s cubic-bezier(.22,.61,.36,1), opacity .26s ease;
+}
+.drawer.show .drawer-inner{ transform: translateY(0) scale(1); opacity:1; }
+.drawer-link{ display:block; padding:14px 12px; border-radius:12px; color:#0f172a; text-decoration:none; font-weight:500; }
+.drawer-link:active{ background:rgba(236,72,153,.08); }
+
+/* Glass / Cards */
+.glass{
+  background:var(--glass);
+  border:1px solid rgba(255,255,255,.7);
+  border-radius:1rem;
+  padding:1rem;
+  transition:transform .32s ease, box-shadow .32s ease;
+  box-shadow:0 10px 30px rgba(2,6,23,.06);
+}
+@media(hover:hover){ .glass:hover{transform:translateY(-6px) scale(1.02);box-shadow:0 22px 50px rgba(236,72,153,.16);} }
+
+.canvas-wrap{width:100%;max-width:420px;}
+.canvas-fluid{width:100%;height:auto;image-rendering:pixelated;}
+.game-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;}
+
+.btn{
+  display:inline-flex;gap:.5rem;align-items:center;background:var(--accent);color:#fff;
+  padding:.6rem 1rem;border-radius:.9rem;box-shadow:0 10px 24px rgba(236,72,153,.18);transition:transform .2s ease;
+}
+@media(hover:hover){ .btn:hover{transform:translateY(-2px);} }
+
+.ctrl-bar{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.6rem;}
+.ctrl-btn{padding:.7rem 1rem;border-radius:.9rem;background:var(--accent);color:#fff;font-size:1.05rem;box-shadow:0 6px 14px rgba(0,0,0,.06);}
+
+/* Inputs ≥16px evita zoom ao focar no iOS */
+input,select,textarea,button{ font-size:16px; }
+
+/* Audio bar */
+#audioBar{
+  position:fixed;bottom:0;left:0;right:0;
+  padding:.6rem .8rem calc(.6rem + env(safe-area-inset-bottom));
+  backdrop-filter:blur(8px) saturate(120%);
+  -webkit-backdrop-filter:blur(8px) saturate(120%);
+  background:rgba(255,255,255,.75);
+  box-shadow:0 -8px 24px rgba(2,6,23,.10);
+  z-index:45;
+}
+
+/* MOBILE helpers */
+@media(max-width:640px){
+  .mobile-only{display:block !important;}
+  .desktop-only{display:none !important;}
+  .game-grid{grid-template-columns:1fr;gap:.75rem;}
+}
+.mobile-only{display:none;}
+
+@media(prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;transition-duration:.01ms !important;}
+}
+
+/* TIMELINE / SWIPER limpo no mobile */
+.timeline-card img{transition:transform .45s ease;will-change:transform;}
+@media(hover:hover){ .timeline-card:hover img{transform:scale(1.06) translateY(-6px);} }
+
+#timeline .swiper{ padding-bottom: 64px; }
+#timeline .timeline-card p{ margin: 14px 0 28px; text-align: center; }
+
+/* some os bullets */
+.swiper-pagination{ display:none !important; }
+/* Setas um pouco maiores no mobile */
+.swiper-button-next,.swiper-button-prev{ width:48px;height:48px; }
+
+/* Map */
+#map { height: calc(100svh - 180px); border-radius: 1rem; overflow: hidden; }
+.map-wrap { background: var(--glass); border:1px solid rgba(255,255,255,.7); border-radius:1rem; padding:.75rem; }
+.leaflet-container { background: rgba(255,255,255,.55); }
+.legend-dot { display:inline-block; width:12px; height:12px; border-radius:999px; background:#ec4899; vertical-align:middle; margin-right:6px; }
+
+/* iOS: alivio de filtros para estabilidade */
+@supports (-webkit-touch-callout: none){
+  body{ animation-duration: 24s; }
+  #timeline .swiper-slide{ content-visibility:auto; contain:layout paint size; }
+}

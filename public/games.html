@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="format-detection" content="telephone=no">
+  <title>24ever — Games</title>
+
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    canvas{ -webkit-user-select:none; user-select:none; touch-action:none; }
+  </style>
+</head>
+<body class="pb-24">
+  <div class="blob b1"></div><div class="blob b2"></div>
+
+  <nav class="nav">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <a href="/" class="brand">24ever</a>
+      <button class="hamb" aria-label="Abrir menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <div class="links">
+        <a href="/">Home</a>
+        <a href="/map">Our Map</a>
+        <a href="/calendar">Our Calendar</a>
+        <a href="/notes">Notes</a>
+        <a href="/links">Links</a>
+        <form action="/logout" method="post" class="logout"><button> sair </button></form>
+      </div>
+    </div>
+  </nav>
+  <aside id="drawer" class="drawer">
+    <div class="drawer-inner">
+      <a href="/" class="drawer-link">Home</a>
+      <a href="/map" class="drawer-link">Our Map</a>
+      <a href="/calendar" class="drawer-link">Our Calendar</a>
+      <a href="/notes" class="drawer-link">Notes</a>
+      <a href="/links" class="drawer-link">Links</a>
+      <form action="/logout" method="post"><button class="drawer-link">sair</button></form>
+    </div>
+  </aside>
+
+  <main class="max-w-6xl mx-auto px-4 pt-24 pb-10">
+    <header class="flex items-end justify-between mb-6">
+      <div>
+        <h1 class="text-3xl font-extrabold">24ever Arcade</h1>
+        <p class="text-sm text-gray-600 mt-1">Toques suaves, sem zoom, e tudo fluido no iPhone ✨</p>
+      </div>
+    </header>
+
+    <div class="game-grid">
+      <!-- 2048 -->
+      <section class="glass">
+        <div class="flex items-center justify-between">
+          <h2 class="font-semibold">2048 — Love Tiles</h2>
+          <div class="text-sm"><span class="text-gray-500">Score:</span> <span id="score2048" class="font-bold">0</span></div>
+        </div>
+
+        <div class="canvas-wrap">
+          <canvas id="game2048" width="360" height="360" class="mt-3 border rounded-xl hidden canvas-fluid"></canvas>
+        </div>
+
+        <div class="flex items-center gap-3 mt-3">
+          <button id="btn2048" class="btn">Jogar 2048</button>
+          <span class="text-xs text-gray-500 desktop-only">Setas para mover</span>
+        </div>
+
+        <div class="ctrl-bar mobile-only">
+          <button class="ctrl-btn" data-2048="left">←</button>
+          <button class="ctrl-btn" data-2048="up">↑</button>
+          <button class="ctrl-btn" data-2048="down">↓</button>
+          <button class="ctrl-btn" data-2048="right">→</button>
+        </div>
+      </section>
+
+      <!-- Tetris -->
+      <section class="glass">
+        <div class="flex items-center justify-between">
+          <h2 class="font-semibold">Tetris — Heart Blocks</h2>
+          <div class="flex items-center gap-4 text-sm">
+            <div><span class="text-gray-500">Score:</span> <span id="tScore" class="font-bold">0</span></div>
+            <div><span class="text-gray-500">Level:</span> <span id="tLevel" class="font-bold">1</span></div>
+          </div>
+        </div>
+
+        <div class="flex gap-4 mt-3 items-start">
+          <div class="canvas-wrap">
+            <canvas id="tetris" width="240" height="480" class="border rounded-xl hidden canvas-fluid"></canvas>
+          </div>
+          <div class="flex flex-col gap-2 min-w-[120px]">
+            <div class="bg-white/70 rounded-xl p-2 shadow">
+              <div class="text-xs text-gray-500">Próxima</div>
+              <canvas id="nextPiece" width="96" height="96" class="rounded-lg border mt-1 hidden"></canvas>
+            </div>
+            <div class="flex gap-2">
+              <button id="btnTetris" class="btn">Jogar Tetris</button>
+              <button id="tPause" class="px-3 py-2 rounded-xl bg-pink-100 text-pink-700 text-sm hidden">Pausar</button>
+            </div>
+            <div class="text-xs text-gray-500 desktop-only">Setas: mover • ↑ gira • Espaço derruba</div>
+          </div>
+        </div>
+
+        <div class="ctrl-bar mobile-only">
+          <button class="ctrl-btn" data-t="left">←</button>
+          <button class="ctrl-btn" data-t="rotate">↻</button>
+          <button class="ctrl-btn" data-t="right">→</button>
+          <button class="ctrl-btn" data-t="soft">↓</button>
+          <button class="ctrl-btn" data-t="hard">DROP</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div id="audioBar" class="bg-white/80 border-t p-2 fixed bottom-0 left-0 right-0 flex items-center gap-3">
+    <button id="playPause" class="px-3 py-1 rounded-lg bg-pink-500 text-white text-sm">Tocar</button>
+    <input id="volume" type="range" min="0" max="1" step="0.01" value="0.6" />
+    <span id="currentTrack" class="text-xs text-gray-600"></span>
+    <audio id="bgm" preload="auto"></audio>
+  </div>
+
+  <script>
+    // bloqueia double-tap zoom no iOS nos jogos
+    let lastTouch = 0;
+    document.addEventListener('touchend', (e)=>{
+      const now = Date.now();
+      if (now - lastTouch < 350) { e.preventDefault(); }
+      lastTouch = now;
+    }, {passive:false});
+  </script>
+  <script src="/js/navbar.js"></script>
+  <script src="/js/game-2048.js"></script>
+  <script src="/js/game-tetris.js"></script>
+  <script src="/js/games.js"></script>
+  <script src="/js/main.js"></script>
+</body>
+</html>

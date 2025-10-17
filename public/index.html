@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="format-detection" content="telephone=no">
+  <title>24ever — since 24/10/2022</title>
+
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/aos@2.3.1/dist/aos.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+  <style> body{font-family:Poppins,system-ui,Arial} </style>
+</head>
+<body class="pb-24">
+  <div class="blob b1"></div><div class="blob b2"></div>
+
+  <!-- NAVBAR unificada -->
+  <nav class="nav fixed top-0 left-0 right-0 z-50">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <a href="/" class="brand">24ever</a>
+      <button class="hamb" aria-label="Abrir menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="links">
+        <a href="/#contador">Countdown</a>
+        <a href="/#timeline">Our Moments</a>
+        <a href="/games">Games</a>
+        <a href="/calendar">Our Calendar</a>
+        <a href="/links">Links</a>
+        <a href="/travel">Our Travels</a>
+        <form action="/logout" method="post" class="logout"><button> sair </button></form>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Drawer -->
+  <aside id="drawer" class="drawer">
+    <div class="drawer-inner">
+      <a href="/#contador" class="drawer-link">Countdown</a>
+      <a href="/#timeline" class="drawer-link">Our Moments</a>
+      <a href="/games" class="drawer-link">Games</a>
+      <a href="/calendar" class="drawer-link">Our Calendar</a>
+      <a href="/links" class="drawer-link">Links</a>
+      <a href="/travel" class="drawer-link">Our Travels</a>
+      <form action="/logout" method="post"><button class="drawer-link">sair</button></form>
+    </div>
+  </aside>
+
+  <main id="topo" class="pt-20">
+    <!-- Countdown -->
+    <section id="contador" class="max-w-6xl mx-auto px-4 py-16 text-center" data-aos="fade-up">
+      <h1 class="text-3xl sm:text-5xl font-extrabold text-gray-800">Since 24/10/2022</h1>
+      <p class="mt-4 text-gray-600">Time since you changed my life</p>
+      <div id="since" class="mt-10 text-2xl sm:text-4xl font-extrabold text-pink-600"></div>
+    </section>
+
+    <!-- Our Moments / Timeline -->
+    <section id="timeline" class="bg-white/70 py-16" data-aos="fade-up">
+      <div class="max-w-6xl mx-auto px-4">
+        <h2 class="text-2xl font-bold mb-6">Our Moments (Leia a Gelenda)</h2>
+        <div class="swiper">
+          <div class="swiper-wrapper" id="timelineSlides"></div>
+          <div class="swiper-pagination"></div>
+          <div class="swiper-button-prev"></div>
+          <div class="swiper-button-next"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Player -->
+  <div id="audioBar" class="bg-white/80 border-t p-2 flex items-center gap-3">
+    <button id="playPause" class="px-3 py-1 rounded-lg bg-pink-500 text-white text-sm">Tocar</button>
+    <input id="volume" type="range" min="0" max="1" step="0.01" value="0.6" />
+    <span id="currentTrack" class="text-xs text-gray-600"></span>
+    <audio id="bgm" preload="auto"></audio>
+  </div>
+
+  <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+  <script src="/js/navbar.js"></script>
+  <script src="/js/timeline.js"></script>
+  <script src="/js/main.js"></script>
+  <script>AOS.init({ once:true, duration:800 });</script>
+</body>
+</html>

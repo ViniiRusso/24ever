@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="format-detection" content="telephone=no">
+  <title>24ever — Our Map</title>
+
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+</head>
+<body class="pb-24">
+  <nav class="nav">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <a href="/" class="brand">24ever</a>
+      <button class="hamb" aria-label="Abrir menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <div class="links">
+        <a href="/">Home</a>
+        <a href="/games">Games</a>
+        <a href="/calendar">Our Calendar</a>
+        <a href="/notes">Notes</a>
+        <a href="/links">Links</a>
+        <form action="/logout" method="post" class="logout"><button> sair </button></form>
+      </div>
+    </div>
+  </nav>
+  <aside id="drawer" class="drawer">
+    <div class="drawer-inner">
+      <a href="/" class="drawer-link">Home</a>
+      <a href="/games" class="drawer-link">Games</a>
+      <a href="/calendar" class="drawer-link">Our Calendar</a>
+      <a href="/notes" class="drawer-link">Notes</a>
+      <a href="/links" class="drawer-link">Links</a>
+      <form action="/logout" method="post"><button class="drawer-link">sair</button></form>
+    </div>
+  </aside>
+
+  <main class="max-w-6xl mx-auto px-4 pt-24">
+    <header class="flex items-end justify-between mb-4">
+      <div>
+        <h1 class="text-2xl font-extrabold">Our Map</h1>
+        <p class="text-sm text-gray-600 mt-1">Toque nos <b>estados</b> para marcar onde já fomos 💖</p>
+      </div>
+      <div class="text-sm text-gray-600">
+        <span class="legend-dot"></span> Visitado • <span id="visitedCount">0</span> estados
+      </div>
+    </header>
+
+    <div class="toolbar flex flex-wrap gap-2 mb-4">
+      <button id="btnBR" class="btn">Carregar Brasil</button>
+      <button id="btnUS" class="btn">Carregar EUA</button>
+      <button id="btnReset" class="px-3 py-2 rounded-xl bg-pink-100 text-pink-700">Limpar tudo</button>
+    </div>
+
+    <div class="map-wrap">
+      <div id="map" role="region" aria-label="Mapa por estados"></div>
+    </div>
+  </main>
+
+  <div id="audioBar" class="bg-white/80 border-t p-2 fixed bottom-0 left-0 right-0 flex items-center gap-3">
+    <button id="playPause" class="px-3 py-1 rounded-lg bg-pink-500 text-white text-sm">Tocar</button>
+    <input id="volume" type="range" min="0" max="1" step="0.01" value="0.6" />
+    <span id="currentTrack" class="text-xs text-gray-600"></span>
+    <audio id="bgm" preload="auto"></audio>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="/js/navbar.js"></script>
+  <script src="/js/main.js"></script>
+  <script>
+    const visitedStateIds = new Set();
+    let map, layer;
+    const visitedCount = document.getElementById('visitedCount');
+
+    const styleNormal  = { color:'#ec4899', weight:1, fillColor:'#fbcfe8', fillOpacity:.25 };
+    const styleVisited = { color:'#ec4899', weight:1.2, fillColor:'#ec4899', fillOpacity:.6 };
+
+    async function loadVisited(){
+      const r = await fetch('/api/map/states'); if(!r.ok) return;
+      const arr = await r.json(); arr.forEach(id=>visitedStateIds.add(id));
+      renderCount();
+    }
+    function renderCount(){ visitedCount.textContent = String(visitedStateIds.size); }
+
+    function stateIdFrom(feature){
+      // tenta ISO code padrão; fallback para name (normalizado)
+      let c = feature?.properties?.code || feature?.properties?.iso_3166_2 || feature?.properties?.state_code;
+      let cc = feature?.properties?.country_code || feature?.properties?.country || '';
+      if (!cc && feature?.properties?.admin){ cc = feature.properties.admin; }
+      if (c && c.includes('-')) return c.toUpperCase();
+      if (cc && c) return `${String(cc).slice(0,2).toUpperCase()}-${String(c).slice(0,3).toUpperCase()}`;
+      // pior caso: BR-<nome3>
+      let name = (feature?.properties?.name || '').normalize('NFD').replace(/\p{Diacritic}/gu,'').toUpperCase().replace(/\s+/g,'-').slice(0,3);
+      return `XX-${name}`;
+    }
+
+    function onEach(feature, layerEl){
+      const id = stateIdFrom(feature);
+      const isVisited = visitedStateIds.has(id);
+      layerEl.setStyle(isVisited? styleVisited : styleNormal);
+      layerEl.on('click', async ()=>{
+        const nowVisited = !visitedStateIds.has(id);
+        if (nowVisited) visitedStateIds.add(id); else visitedStateIds.delete(id);
+        layerEl.setStyle(nowVisited? styleVisited : styleNormal);
+        renderCount();
+        await fetch('/api/map/states', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ id, visited: nowVisited })
+        });
+      });
+      const name = feature?.properties?.name || feature?.properties?.state_name || 'Estado';
+      layerEl.bindTooltip(`${name}`,{sticky:true, direction:'auto'});
+    }
+
+    async function loadGeoJSON(url, fit=true){
+      const r = await fetch(url); const gj = await r.json();
+      if (layer) { map.removeLayer(layer); }
+      layer = L.geoJSON(gj, { onEachFeature:onEach }).addTo(map);
+      if (fit) map.fitBounds(layer.getBounds(), { padding:[20,20] });
+    }
+
+    function initMap(){
+      map = L.map('map', { zoomControl:true, scrollWheelZoom:true });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '&copy; OpenStreetMap'
+      }).addTo(map);
+      map.setView([0,0],2);
+    }
+
+    // fontes GeoJSON (estados)
+    const URL_BR = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson';
+    const URL_US = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/united-states.geojson';
+
+    document.getElementById('btnBR').addEventListener('click',()=>loadGeoJSON(URL_BR));
+    document.getElementById('btnUS').addEventListener('click',()=>loadGeoJSON(URL_US));
+    document.getElementById('btnReset').addEventListener('click', async ()=>{
+      visitedStateIds.clear(); renderCount();
+      await fetch('/api/map/states', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id:'__wipe__', visited:false }) });
+      // re-render estilos
+      if (layer) layer.eachLayer(l=>l.setStyle(styleNormal));
+    });
+
+    (async function(){
+      initMap();
+      await loadVisited();
+    })();
+  </script>
+</body>
+</html>
