@@ -1,7 +1,7 @@
 // server.js — ESM + session + bcrypt + helmet + APIs (notes & map)
 import express from 'express';
 import path from 'path';
-import fs from 'fs';
+import fs from 'fs';F
 import bcrypt from 'bcryptjs';
 import session from 'express-session';
 import helmet from 'helmet';
@@ -38,15 +38,26 @@ app.use(session({
 }));
 
 // ---------- estáticos
-app.use(express.static(path.join(__dirname, 'public')));
+// ---------- performance: compressão e cache estático
+import compression from 'compression';
 
+app.use(compression()); // gzip/br
+
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders(res, filePath) {
+    // cache forte para assets (1 ano)
+    if (/\.(?:js|css|jpg|jpeg|png|webp|gif|svg|woff2?)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  }
+}));
 // ---------- auth
 const AUTH_FILE = path.join(__dirname, 'auth.json');
 let PASSWORD_HASH = null;
 try {
   const raw = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'));
   PASSWORD_HASH = raw.password_hash || null;
-} catch {}
+} catch { }
 
 const APP_PASSWORD_PLAIN = process.env.APP_PASSWORD || null;
 
@@ -99,12 +110,12 @@ app.post('/logout', (req, res) => {
 app.use(requireAuth);
 
 // ---------- páginas
-app.get('/',        (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-app.get('/games',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'games.html')));
-app.get('/links',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'links.html')));
-app.get('/calendar',(_, res) => res.sendFile(path.join(__dirname, 'public', 'calendar.html')));
-app.get('/map',     (_, res) => res.sendFile(path.join(__dirname, 'public', 'map.html')));
-app.get('/notes',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'notes.html')));
+app.get('/', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/games', (_, res) => res.sendFile(path.join(__dirname, 'public', 'games.html')));
+app.get('/links', (_, res) => res.sendFile(path.join(__dirname, 'public', 'links.html')));
+app.get('/calendar', (_, res) => res.sendFile(path.join(__dirname, 'public', 'calendar.html')));
+app.get('/map', (_, res) => res.sendFile(path.join(__dirname, 'public', 'map.html')));
+app.get('/notes', (_, res) => res.sendFile(path.join(__dirname, 'public', 'notes.html')));
 
 // ---------- DATA DIR
 const DATA_DIR = path.join(__dirname, 'data');
@@ -114,8 +125,8 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const EVENTS_FILE = path.join(DATA_DIR, 'events.json');
 if (!fs.existsSync(EVENTS_FILE)) fs.writeFileSync(EVENTS_FILE, '[]');
 
-function readJSON(file){ try { return JSON.parse(fs.readFileSync(file,'utf8')); } catch { return []; } }
-function writeJSON(file, data){ fs.writeFileSync(file, JSON.stringify(data,null,2)); }
+function readJSON(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return []; } }
+function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2)); }
 
 app.get('/api/events', (_req, res) => res.json(readJSON(EVENTS_FILE)));
 app.post('/api/events', (req, res) => {
@@ -146,7 +157,7 @@ app.post('/api/notes', (req, res) => {
   const { text } = req.body || {};
   if (!text) return res.status(400).json({ error: 'missing text' });
   const notes = readJSON(NOTES_FILE);
-  const note = { id: (Math.random().toString(16).slice(2)).slice(0,12), text, ts: Date.now() };
+  const note = { id: (Math.random().toString(16).slice(2)).slice(0, 12), text, ts: Date.now() };
   notes.unshift(note);
   writeJSON(NOTES_FILE, notes);
   res.json(note);
