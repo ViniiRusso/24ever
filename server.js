@@ -1,7 +1,7 @@
 // server.js — ESM + session + bcrypt + helmet + APIs (notes & map)
 import express from 'express';
 import path from 'path';
-import fs from 'fs';F
+import fs from 'fs';
 import bcrypt from 'bcryptjs';
 import session from 'express-session';
 import helmet from 'helmet';
