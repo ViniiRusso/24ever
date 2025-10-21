@@ -1,4 +1,4 @@
-// server.js — ESM + session + bcrypt + helmet + APIs (notes & map)
+// server.js — login primeiro, assets liberados, páginas só após sessão
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -11,21 +11,19 @@ import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 
 dotenv.config();
-
-// __dirname em ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ---------- segurança básica
+// -------- segurança & perf
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(compression());
 
-// ---------- sessão
+// -------- sessão
 const SESSION_SECRET = process.env.SESSION_SECRET || 'please-change-this-secret';
 app.use(session({
   name: 's24',
@@ -40,36 +38,37 @@ app.use(session({
   }
 }));
 
-// ---------- estáticos
-app.use(express.static(path.join(__dirname, 'public')));
-
-// ---------- autenticação
-const AUTH_FILE = path.join(__dirname, 'auth.json');
-let PASSWORD_HASH = null;
-try {
-  const raw = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'));
-  PASSWORD_HASH = raw.password_hash || null;
-} catch { }
-
-const APP_PASSWORD_PLAIN = process.env.APP_PASSWORD || null;
-
-function requireAuth(req, res, next) {
-  if (!req.session.userId) {
-    // se não estiver logado e não for rota pública, redireciona
-    if (!req.path.startsWith('/login') && !req.path.startsWith('/auth')) {
-      return res.redirect('/login');
-    }
+// -------- só ASSETS públicos (css/js/img/woff...). NUNCA html aqui!
+const ASSET_EXT = /\.(css|js|mjs|png|jpg|jpeg|webp|gif|svg|ico|woff2?|map)$/i;
+app.use((req, res, next) => {
+  if (ASSET_EXT.test(req.path)) {
+    return express.static(path.join(__dirname, 'public'), {
+      setHeaders(res, filePath) {
+        if (/\.(?:js|css|jpg|jpeg|png|webp|gif|svg|woff2?)$/i.test(filePath)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+      index: false,
+    })(req, res, next);
   }
   next();
-}
+});
 
-// ---------- rotas públicas
-app.get('/login', (_, res) => {
+// -------- rotas públicas (login)
+app.get('/login', (req, res) => {
+  if (req.session.userId) return res.redirect('/'); // já logado? vai pra home
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
 app.post('/auth', async (req, res) => {
   const { password } = req.body || {};
+  const AUTH_FILE = path.join(__dirname, 'auth.json');
+  let PASSWORD_HASH = null;
+  try {
+    PASSWORD_HASH = (JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'))).password_hash || null;
+  } catch {}
+  const APP_PASSWORD_PLAIN = process.env.APP_PASSWORD || null;
+
   if (APP_PASSWORD_PLAIN && password === APP_PASSWORD_PLAIN) {
     req.session.userId = 'u1';
     return res.redirect('/');
@@ -88,88 +87,82 @@ app.post('/logout', (req, res) => {
   });
 });
 
-// ---------- autenticação obrigatória
+// -------- exige auth daqui pra baixo
+function requireAuth(req, res, next) {
+  if (!req.session.userId) return res.redirect('/login');
+  next();
+}
 app.use(requireAuth);
 
-// ---------- Páginas protegidas
-app.get('/', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-app.get('/games', (_, res) => res.sendFile(path.join(__dirname, 'public', 'games.html')));
-app.get('/map', (_, res) => res.sendFile(path.join(__dirname, 'public', 'map.html')));
-app.get('/calendar', (_, res) => res.sendFile(path.join(__dirname, 'public', 'calendar.html')));
-app.get('/notes', (_, res) => res.sendFile(path.join(__dirname, 'public', 'notes.html')));
-app.get('/links', (_, res) => res.sendFile(path.join(__dirname, 'public', 'links.html')));
+// -------- estáticos completos (inclui html) só após auth
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
-// ---------- DATA persistente (Render Disk)
+// -------- páginas protegidas
+app.get('/',        (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/games',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'games.html')));
+app.get('/map',     (_, res) => res.sendFile(path.join(__dirname, 'public', 'map.html')));
+app.get('/calendar',(_, res) => res.sendFile(path.join(__dirname, 'public', 'calendar.html')));
+app.get('/notes',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'notes.html')));
+app.get('/links',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'links.html')));
+
+// -------- dados persistentes (usa Render Disk se tiver; senão /data local)
 const DATA_DIR = process.env.DATA_DIR || '/opt/render/project/src/data';
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-
-function readJSON(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return []; } }
-function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2)); }
-
 const EVENTS_FILE = path.join(DATA_DIR, 'events.json');
-const NOTES_FILE = path.join(DATA_DIR, 'notes.json');
-const MAP_FILE = path.join(DATA_DIR, 'map.json');
+const NOTES_FILE  = path.join(DATA_DIR, 'notes.json');
+const MAP_FILE    = path.join(DATA_DIR, 'map.json');
+for (const f of [EVENTS_FILE, NOTES_FILE, MAP_FILE]) if (!fs.existsSync(f)) fs.writeFileSync(f, '[]');
 
-for (const f of [EVENTS_FILE, NOTES_FILE, MAP_FILE]) {
-  if (!fs.existsSync(f)) fs.writeFileSync(f, '[]');
-}
+const readJSON  = f => { try { return JSON.parse(fs.readFileSync(f,'utf8')); } catch { return []; } };
+const writeJSON = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2));
 
-// ---------- APIs
-// calendário
+// ---- APIs
+// calendar
 app.get('/api/events', (_, res) => res.json(readJSON(EVENTS_FILE)));
 app.post('/api/events', (req, res) => {
   const { id, title, start, end, allDay } = req.body || {};
   if (!title || !start) return res.status(400).json({ error: 'missing fields' });
   const events = readJSON(EVENTS_FILE);
-  const ev = { id: id || crypto.randomUUID(), title, start, end, allDay: !!allDay };
-  events.push(ev);
-  writeJSON(EVENTS_FILE, events);
-  res.json(ev);
+  const ev = { id: id || crypto.randomUUID(), title, start, end: end || null, allDay: !!allDay };
+  events.push(ev); writeJSON(EVENTS_FILE, events); res.json(ev);
 });
 app.delete('/api/events/:id', (req, res) => {
-  const events = readJSON(EVENTS_FILE).filter(e => e.id !== req.params.id);
-  writeJSON(EVENTS_FILE, events);
+  writeJSON(EVENTS_FILE, readJSON(EVENTS_FILE).filter(e => e.id !== req.params.id));
   res.json({ ok: true });
 });
 
-// notas
+// notes
 app.get('/api/notes', (_, res) => res.json(readJSON(NOTES_FILE)));
 app.post('/api/notes', (req, res) => {
   const { text } = req.body || {};
   if (!text) return res.status(400).json({ error: 'missing text' });
   const notes = readJSON(NOTES_FILE);
   const note = { id: crypto.randomUUID(), text, ts: Date.now() };
-  notes.unshift(note);
-  writeJSON(NOTES_FILE, notes);
-  res.json(note);
+  notes.unshift(note); writeJSON(NOTES_FILE, notes); res.json(note);
 });
 app.patch('/api/notes/:id', (req, res) => {
   const notes = readJSON(NOTES_FILE);
   const i = notes.findIndex(n => n.id === req.params.id);
   if (i === -1) return res.status(404).json({ error: 'not found' });
-  notes[i].text = req.body.text || notes[i].text;
-  notes[i].ts = Date.now();
-  writeJSON(NOTES_FILE, notes);
-  res.json(notes[i]);
+  notes[i].text = req.body.text ?? notes[i].text; notes[i].ts = Date.now();
+  writeJSON(NOTES_FILE, notes); res.json(notes[i]);
 });
 app.delete('/api/notes/:id', (req, res) => {
-  const notes = readJSON(NOTES_FILE).filter(n => n.id !== req.params.id);
-  writeJSON(NOTES_FILE, notes);
+  writeJSON(NOTES_FILE, readJSON(NOTES_FILE).filter(n => n.id !== req.params.id));
   res.json({ ok: true });
 });
 
-// mapa
+// map
 app.get('/api/map/states', (_, res) => res.json(readJSON(MAP_FILE)));
 app.post('/api/map/states', (req, res) => {
   const { id, visited } = req.body || {};
   if (!id) return res.status(400).json({ error: 'missing id' });
-  const states = new Set(readJSON(MAP_FILE));
-  visited ? states.add(id) : states.delete(id);
-  writeJSON(MAP_FILE, Array.from(states));
-  res.json(Array.from(states));
+  const set = new Set(readJSON(MAP_FILE));
+  visited ? set.add(id) : set.delete(id);
+  const arr = [...set]; writeJSON(MAP_FILE, arr); res.json(arr);
 });
 
-// ---------- 404
-app.use((_, res) => res.redirect('/login'));
+// -------- 404
+app.use((_, res) => res.redirect('/'));
 
 app.listen(PORT, () => console.log(`✅ 24ever rodando em http://localhost:${PORT}`));
