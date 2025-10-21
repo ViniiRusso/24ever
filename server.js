@@ -1,4 +1,4 @@
-// server.js — login primeiro, assets liberados, páginas só após sessão
+// server.js — login primeiro; sessão atrás de proxy (Render); assets públicos
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -12,18 +12,21 @@ import crypto from 'crypto';
 
 dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname  = path.dirname(__filename);
 
-const app = express();
+const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// -------- segurança & perf
+// *** IMPORTANTE no Render (proxy) para cookies secure funcionarem
+app.set('trust proxy', 1);
+
+// segurança & perf
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(compression());
 
-// -------- sessão
+// sessão
 const SESSION_SECRET = process.env.SESSION_SECRET || 'please-change-this-secret';
 app.use(session({
   name: 's24',
@@ -33,12 +36,12 @@ app.use(session({
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production', // no Render é true
     maxAge: 1000 * 60 * 60 * 24 * 7, // 7 dias
   }
 }));
 
-// -------- só ASSETS públicos (css/js/img/woff...). NUNCA html aqui!
+// só ASSETS públicos (css/js/img/woff...). NUNCA html aqui!
 const ASSET_EXT = /\.(css|js|mjs|png|jpg|jpeg|webp|gif|svg|ico|woff2?|map)$/i;
 app.use((req, res, next) => {
   if (ASSET_EXT.test(req.path)) {
@@ -54,31 +57,33 @@ app.use((req, res, next) => {
   next();
 });
 
-// -------- rotas públicas (login)
+// ---------- LOGIN (público)
 app.get('/login', (req, res) => {
-  if (req.session.userId) return res.redirect('/'); // já logado? vai pra home
+  if (req.session.userId) return res.redirect('/');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-app.post('/auth', async (req, res) => {
+async function doAuth(req, res) {
   const { password } = req.body || {};
   const AUTH_FILE = path.join(__dirname, 'auth.json');
   let PASSWORD_HASH = null;
-  try {
-    PASSWORD_HASH = (JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'))).password_hash || null;
-  } catch {}
+  try { PASSWORD_HASH = (JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'))).password_hash || null; } catch {}
   const APP_PASSWORD_PLAIN = process.env.APP_PASSWORD || null;
 
-  if (APP_PASSWORD_PLAIN && password === APP_PASSWORD_PLAIN) {
+  const okEnv  = APP_PASSWORD_PLAIN && password === APP_PASSWORD_PLAIN;
+  const okFile = PASSWORD_HASH && await bcrypt.compare(String(password || ''), PASSWORD_HASH);
+
+  if (!(okEnv || okFile)) return res.redirect('/login?e=1');
+
+  // Regenera a sessão e salva ANTES de redirecionar
+  req.session.regenerate(err => {
+    if (err) return res.redirect('/login?e=1');
     req.session.userId = 'u1';
-    return res.redirect('/');
-  }
-  if (PASSWORD_HASH && await bcrypt.compare(String(password || ''), PASSWORD_HASH)) {
-    req.session.userId = 'u1';
-    return res.redirect('/');
-  }
-  return res.redirect('/login?e=1');
-});
+    req.session.save(() => res.redirect('/'));
+  });
+}
+app.post('/auth', doAuth);
+app.post('/login', doAuth);
 
 app.post('/logout', (req, res) => {
   req.session.destroy(() => {
@@ -87,17 +92,17 @@ app.post('/logout', (req, res) => {
   });
 });
 
-// -------- exige auth daqui pra baixo
+// ---------- exige auth daqui pra baixo
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.redirect('/login');
   next();
 }
 app.use(requireAuth);
 
-// -------- estáticos completos (inclui html) só após auth
+// estáticos completos (inclui html) só após auth
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
-// -------- páginas protegidas
+// páginas protegidas
 app.get('/',        (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/games',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'games.html')));
 app.get('/map',     (_, res) => res.sendFile(path.join(__dirname, 'public', 'map.html')));
@@ -105,7 +110,7 @@ app.get('/calendar',(_, res) => res.sendFile(path.join(__dirname, 'public', 'cal
 app.get('/notes',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'notes.html')));
 app.get('/links',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'links.html')));
 
-// -------- dados persistentes (usa Render Disk se tiver; senão /data local)
+// ---------- DATA (persistência em arquivo; aponta para volume se existir)
 const DATA_DIR = process.env.DATA_DIR || '/opt/render/project/src/data';
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const EVENTS_FILE = path.join(DATA_DIR, 'events.json');
@@ -113,12 +118,11 @@ const NOTES_FILE  = path.join(DATA_DIR, 'notes.json');
 const MAP_FILE    = path.join(DATA_DIR, 'map.json');
 for (const f of [EVENTS_FILE, NOTES_FILE, MAP_FILE]) if (!fs.existsSync(f)) fs.writeFileSync(f, '[]');
 
-const readJSON  = f => { try { return JSON.parse(fs.readFileSync(f,'utf8')); } catch { return []; } };
+const readJSON  = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return []; } };
 const writeJSON = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2));
 
-// ---- APIs
-// calendar
-app.get('/api/events', (_, res) => res.json(readJSON(EVENTS_FILE)));
+// APIs
+app.get('/api/events', (_req, res) => res.json(readJSON(EVENTS_FILE)));
 app.post('/api/events', (req, res) => {
   const { id, title, start, end, allDay } = req.body || {};
   if (!title || !start) return res.status(400).json({ error: 'missing fields' });
@@ -131,8 +135,7 @@ app.delete('/api/events/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// notes
-app.get('/api/notes', (_, res) => res.json(readJSON(NOTES_FILE)));
+app.get('/api/notes', (_req, res) => res.json(readJSON(NOTES_FILE)));
 app.post('/api/notes', (req, res) => {
   const { text } = req.body || {};
   if (!text) return res.status(400).json({ error: 'missing text' });
@@ -144,7 +147,8 @@ app.patch('/api/notes/:id', (req, res) => {
   const notes = readJSON(NOTES_FILE);
   const i = notes.findIndex(n => n.id === req.params.id);
   if (i === -1) return res.status(404).json({ error: 'not found' });
-  notes[i].text = req.body.text ?? notes[i].text; notes[i].ts = Date.now();
+  notes[i].text = req.body.text ?? notes[i].text;
+  notes[i].ts   = Date.now();
   writeJSON(NOTES_FILE, notes); res.json(notes[i]);
 });
 app.delete('/api/notes/:id', (req, res) => {
@@ -152,8 +156,7 @@ app.delete('/api/notes/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// map
-app.get('/api/map/states', (_, res) => res.json(readJSON(MAP_FILE)));
+app.get('/api/map/states', (_req, res) => res.json(readJSON(MAP_FILE)));
 app.post('/api/map/states', (req, res) => {
   const { id, visited } = req.body || {};
   if (!id) return res.status(400).json({ error: 'missing id' });
@@ -162,7 +165,7 @@ app.post('/api/map/states', (req, res) => {
   const arr = [...set]; writeJSON(MAP_FILE, arr); res.json(arr);
 });
 
-// -------- 404
+// 404 → home (protegida)
 app.use((_, res) => res.redirect('/'));
 
 app.listen(PORT, () => console.log(`✅ 24ever rodando em http://localhost:${PORT}`));
