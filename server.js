@@ -1,192 +1,175 @@
-// server.js — versão gratuita 24ever com JSONBin (persistente e sem disco)
-import express from "express";
-import path from "path";
-import fs from "fs";
-import bcrypt from "bcryptjs";
-import session from "express-session";
-import helmet from "helmet";
-import dotenv from "dotenv";
-import fetch from "node-fetch";
-import { fileURLToPath } from "url";
+// server.js — ESM + session + bcrypt + helmet + APIs (notes & map)
+import express from 'express';
+import path from 'path';
+import fs from 'fs';
+import bcrypt from 'bcryptjs';
+import session from 'express-session';
+import helmet from 'helmet';
+import dotenv from 'dotenv';
+import compression from 'compression';
+import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 
 dotenv.config();
 
+// __dirname em ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JSONBIN_KEY = process.env.JSONBIN_KEY;
 
-// JSONBin API setup
-const BASE_URL = "https://api.jsonbin.io/v3/b";
-const BINS = {
-  notes: "NOTES_BIN_ID",
-  map: "MAP_BIN_ID",
-  events: "EVENTS_BIN_ID",
-};
-
-// Helper — cria bin automaticamente se não existir
-async function ensureBin(type, initialValue = []) {
-  if (BINS[type] && !BINS[type].startsWith("BIN_")) return;
-  const res = await fetch(BASE_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Master-Key": JSONBIN_KEY,
-      "X-Bin-Private": "true",
-    },
-    body: JSON.stringify(initialValue),
-  });
-  const data = await res.json();
-  BINS[type] = data.metadata.id;
-  console.log(`✅ Criado bin para ${type}: ${BINS[type]}`);
-}
-await ensureBin("notes");
-await ensureBin("map");
-await ensureBin("events");
-
-async function readBin(type) {
-  const id = BINS[type];
-  const res = await fetch(`${BASE_URL}/${id}/latest`, {
-    headers: { "X-Master-Key": JSONBIN_KEY },
-  });
-  const data = await res.json();
-  return data.record || [];
-}
-
-async function writeBin(type, data) {
-  const id = BINS[type];
-  await fetch(`${BASE_URL}/${id}`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Master-Key": JSONBIN_KEY,
-    },
-    body: JSON.stringify(data),
-  });
-}
-
-// segurança e sessão
+// ---------- segurança básica
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use(compression());
+
+// ---------- sessão
+const SESSION_SECRET = process.env.SESSION_SECRET || 'please-change-this-secret';
 app.use(session({
-  name: "s24",
-  secret: process.env.SESSION_SECRET || "change-me",
+  name: 's24',
+  secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: { httpOnly: true, sameSite: "lax", maxAge: 1000 * 60 * 60 * 24 * 7 },
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 dias
+  }
 }));
 
-// estáticos
-app.use(express.static(path.join(__dirname, "public")));
+// ---------- estáticos
+app.use(express.static(path.join(__dirname, 'public')));
 
-// autenticação simples
-const AUTH_FILE = path.join(__dirname, "auth.json");
+// ---------- autenticação
+const AUTH_FILE = path.join(__dirname, 'auth.json');
 let PASSWORD_HASH = null;
 try {
-  PASSWORD_HASH = JSON.parse(fs.readFileSync(AUTH_FILE, "utf8")).password_hash;
-} catch {}
+  const raw = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'));
+  PASSWORD_HASH = raw.password_hash || null;
+} catch { }
 
 const APP_PASSWORD_PLAIN = process.env.APP_PASSWORD || null;
+
 function requireAuth(req, res, next) {
-  if (req.path.startsWith("/login") || req.path.startsWith("/auth")) return next();
-  if (!req.session.userId) return res.redirect("/login");
+  if (!req.session.userId) {
+    // se não estiver logado e não for rota pública, redireciona
+    if (!req.path.startsWith('/login') && !req.path.startsWith('/auth')) {
+      return res.redirect('/login');
+    }
+  }
   next();
 }
 
-app.get("/login", (_, res) =>
-  res.sendFile(path.join(__dirname, "public", "login.html"))
-);
+// ---------- rotas públicas
+app.get('/login', (_, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
 
-app.post("/auth", async (req, res) => {
+app.post('/auth', async (req, res) => {
   const { password } = req.body || {};
   if (APP_PASSWORD_PLAIN && password === APP_PASSWORD_PLAIN) {
-    req.session.userId = "u1";
-    return res.redirect("/");
+    req.session.userId = 'u1';
+    return res.redirect('/');
   }
-  if (PASSWORD_HASH) {
-    const ok = await bcrypt.compare(String(password || ""), PASSWORD_HASH);
-    if (ok) { req.session.userId = "u1"; return res.redirect("/"); }
+  if (PASSWORD_HASH && await bcrypt.compare(String(password || ''), PASSWORD_HASH)) {
+    req.session.userId = 'u1';
+    return res.redirect('/');
   }
-  res.redirect("/login?e=1");
+  return res.redirect('/login?e=1');
 });
 
-app.post("/logout", (req, res) => {
-  req.session.destroy(() => res.redirect("/login"));
+app.post('/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie('s24');
+    res.redirect('/login');
+  });
 });
 
+// ---------- autenticação obrigatória
 app.use(requireAuth);
 
-// páginas
-const pages = ["index", "games", "calendar", "map", "notes", "links"];
-pages.forEach(p =>
-  app.get(p === "index" ? "/" : `/${p}`, (_, res) =>
-    res.sendFile(path.join(__dirname, "public", `${p}.html`))
-  )
-);
+// ---------- Páginas protegidas
+app.get('/', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/games', (_, res) => res.sendFile(path.join(__dirname, 'public', 'games.html')));
+app.get('/map', (_, res) => res.sendFile(path.join(__dirname, 'public', 'map.html')));
+app.get('/calendar', (_, res) => res.sendFile(path.join(__dirname, 'public', 'calendar.html')));
+app.get('/notes', (_, res) => res.sendFile(path.join(__dirname, 'public', 'notes.html')));
+app.get('/links', (_, res) => res.sendFile(path.join(__dirname, 'public', 'links.html')));
 
-// API — Notes
-app.get("/api/notes", async (_, res) => res.json(await readBin("notes")));
-app.post("/api/notes", async (req, res) => {
-  const { text } = req.body || {};
-  if (!text) return res.status(400).json({ error: "missing text" });
-  const arr = await readBin("notes");
-  const note = { id: crypto.randomUUID(), text, ts: Date.now() };
-  arr.unshift(note);
-  await writeBin("notes", arr);
-  res.json(note);
-});
-app.patch("/api/notes/:id", async (req, res) => {
-  const arr = await readBin("notes");
-  const note = arr.find(n => n.id === req.params.id);
-  if (!note) return res.status(404).json({ error: "not found" });
-  note.text = req.body.text || note.text;
-  note.ts = Date.now();
-  await writeBin("notes", arr);
-  res.json(note);
-});
-app.delete("/api/notes/:id", async (req, res) => {
-  let arr = await readBin("notes");
-  arr = arr.filter(n => n.id !== req.params.id);
-  await writeBin("notes", arr);
-  res.json({ ok: true });
-});
+// ---------- DATA persistente (Render Disk)
+const DATA_DIR = process.env.DATA_DIR || '/opt/render/project/src/data';
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// API — Mapa
-app.get("/api/map/states", async (_, res) => res.json(await readBin("map")));
-app.post("/api/map/states", async (req, res) => {
-  const { id, visited } = req.body || {};
-  if (!id) return res.status(400).json({ error: "missing id" });
-  let arr = await readBin("map");
-  if (visited && !arr.includes(id)) arr.push(id);
-  else arr = arr.filter(x => x !== id);
-  await writeBin("map", arr);
-  res.json(arr);
-});
+function readJSON(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return []; } }
+function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2)); }
 
-// API — Calendário
-app.get("/api/events", async (_, res) => res.json(await readBin("events")));
-app.post("/api/events", async (req, res) => {
-  const { title, start, end, allDay } = req.body || {};
-  if (!title || !start) return res.status(400).json({ error: "missing fields" });
-  const arr = await readBin("events");
-  const ev = { id: crypto.randomUUID(), title, start, end: end || null, allDay: !!allDay };
-  arr.push(ev);
-  await writeBin("events", arr);
+const EVENTS_FILE = path.join(DATA_DIR, 'events.json');
+const NOTES_FILE = path.join(DATA_DIR, 'notes.json');
+const MAP_FILE = path.join(DATA_DIR, 'map.json');
+
+for (const f of [EVENTS_FILE, NOTES_FILE, MAP_FILE]) {
+  if (!fs.existsSync(f)) fs.writeFileSync(f, '[]');
+}
+
+// ---------- APIs
+// calendário
+app.get('/api/events', (_, res) => res.json(readJSON(EVENTS_FILE)));
+app.post('/api/events', (req, res) => {
+  const { id, title, start, end, allDay } = req.body || {};
+  if (!title || !start) return res.status(400).json({ error: 'missing fields' });
+  const events = readJSON(EVENTS_FILE);
+  const ev = { id: id || crypto.randomUUID(), title, start, end, allDay: !!allDay };
+  events.push(ev);
+  writeJSON(EVENTS_FILE, events);
   res.json(ev);
 });
-app.delete("/api/events/:id", async (req, res) => {
-  let arr = await readBin("events");
-  arr = arr.filter(e => e.id !== req.params.id);
-  await writeBin("events", arr);
+app.delete('/api/events/:id', (req, res) => {
+  const events = readJSON(EVENTS_FILE).filter(e => e.id !== req.params.id);
+  writeJSON(EVENTS_FILE, events);
   res.json({ ok: true });
 });
 
-// 404
-app.use((_, res) => res.status(404).send("Not found"));
+// notas
+app.get('/api/notes', (_, res) => res.json(readJSON(NOTES_FILE)));
+app.post('/api/notes', (req, res) => {
+  const { text } = req.body || {};
+  if (!text) return res.status(400).json({ error: 'missing text' });
+  const notes = readJSON(NOTES_FILE);
+  const note = { id: crypto.randomUUID(), text, ts: Date.now() };
+  notes.unshift(note);
+  writeJSON(NOTES_FILE, notes);
+  res.json(note);
+});
+app.patch('/api/notes/:id', (req, res) => {
+  const notes = readJSON(NOTES_FILE);
+  const i = notes.findIndex(n => n.id === req.params.id);
+  if (i === -1) return res.status(404).json({ error: 'not found' });
+  notes[i].text = req.body.text || notes[i].text;
+  notes[i].ts = Date.now();
+  writeJSON(NOTES_FILE, notes);
+  res.json(notes[i]);
+});
+app.delete('/api/notes/:id', (req, res) => {
+  const notes = readJSON(NOTES_FILE).filter(n => n.id !== req.params.id);
+  writeJSON(NOTES_FILE, notes);
+  res.json({ ok: true });
+});
 
-app.listen(PORT, () =>
-  console.log(`💖 24ever online — http://localhost:${PORT}`)
-);
+// mapa
+app.get('/api/map/states', (_, res) => res.json(readJSON(MAP_FILE)));
+app.post('/api/map/states', (req, res) => {
+  const { id, visited } = req.body || {};
+  if (!id) return res.status(400).json({ error: 'missing id' });
+  const states = new Set(readJSON(MAP_FILE));
+  visited ? states.add(id) : states.delete(id);
+  writeJSON(MAP_FILE, Array.from(states));
+  res.json(Array.from(states));
+});
+
+// ---------- 404
+app.use((_, res) => res.redirect('/login'));
+
+app.listen(PORT, () => console.log(`✅ 24ever rodando em http://localhost:${PORT}`));
