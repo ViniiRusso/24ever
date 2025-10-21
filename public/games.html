@@ -20,14 +20,14 @@
 <body class="pb-24">
   <div class="blob b1"></div><div class="blob b2"></div>
 
-  <nav class="nav">
+  <nav class="nav fixed top-0 left-0 right-0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="/" class="brand">24ever</a>
       <button class="hamb" aria-label="Abrir menu" aria-expanded="false"><span></span><span></span><span></span></button>
       <div class="links">
         <a href="/">Home</a>
+        <a href="/games">Games</a>
         <a href="/map">Our Map</a>
-        <a href="/calendar">Our Calendar</a>
         <a href="/notes">Notes</a>
         <a href="/links">Links</a>
         <form action="/logout" method="post" class="logout"><button> sair </button></form>
@@ -37,8 +37,8 @@
   <aside id="drawer" class="drawer">
     <div class="drawer-inner">
       <a href="/" class="drawer-link">Home</a>
+      <a href="/games" class="drawer-link">Games</a>
       <a href="/map" class="drawer-link">Our Map</a>
-      <a href="/calendar" class="drawer-link">Our Calendar</a>
       <a href="/notes" class="drawer-link">Notes</a>
       <a href="/links" class="drawer-link">Links</a>
       <form action="/logout" method="post"><button class="drawer-link">sair</button></form>
@@ -58,7 +58,9 @@
       <section class="glass">
         <div class="flex items-center justify-between">
           <h2 class="font-semibold">2048 — Love Tiles</h2>
-          <div class="text-sm"><span class="text-gray-500">Score:</span> <span id="score2048" class="font-bold">0</span></div>
+          <div class="text-sm">
+            <span class="text-gray-500">Score:</span> <span id="score2048" class="font-bold">0</span>
+          </div>
         </div>
 
         <div class="canvas-wrap">
@@ -124,7 +126,7 @@
   </div>
 
   <script>
-    // bloqueia double-tap zoom no iOS nos jogos
+    /* Bloqueia double-tap zoom no iOS dentro da página de jogos */
     let lastTouch = 0;
     document.addEventListener('touchend', (e)=>{
       const now = Date.now();

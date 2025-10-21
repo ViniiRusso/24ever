@@ -12,16 +12,24 @@
   <script src="https://cdn.tailwindcss.com"></script>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <style>
+    #map { height: calc(100svh - 200px); min-height: 420px; border-radius: 1rem; overflow: hidden; }
+    .map-wrap { background: var(--glass); border:1px solid rgba(255,255,255,.7); border-radius:1rem; padding: .75rem; }
+    .legend-dot { display:inline-block; width:12px; height:12px; border-radius:999px; background:#ec4899; vertical-align:middle; margin-right:6px; }
+    .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(90px + env(safe-area-inset-bottom)); background:#111827; color:#fff; padding:.6rem .9rem; border-radius:.75rem; font-size:.9rem; z-index:70; box-shadow:0 10px 24px rgba(0,0,0,.25); }
+    .hidden{display:none}
+  </style>
 </head>
 <body class="pb-24">
-  <nav class="nav">
+  <!-- NAVBAR -->
+  <nav class="nav fixed top-0 left-0 right-0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="/" class="brand">24ever</a>
       <button class="hamb" aria-label="Abrir menu" aria-expanded="false"><span></span><span></span><span></span></button>
       <div class="links">
         <a href="/">Home</a>
         <a href="/games">Games</a>
-        <a href="/calendar">Our Calendar</a>
+        <a href="/map">Our Map</a>
         <a href="/notes">Notes</a>
         <a href="/links">Links</a>
         <form action="/logout" method="post" class="logout"><button> sair </button></form>
@@ -32,7 +40,7 @@
     <div class="drawer-inner">
       <a href="/" class="drawer-link">Home</a>
       <a href="/games" class="drawer-link">Games</a>
-      <a href="/calendar" class="drawer-link">Our Calendar</a>
+      <a href="/map" class="drawer-link">Our Map</a>
       <a href="/notes" class="drawer-link">Notes</a>
       <a href="/links" class="drawer-link">Links</a>
       <form action="/logout" method="post"><button class="drawer-link">sair</button></form>
@@ -51,8 +59,8 @@
     </header>
 
     <div class="toolbar flex flex-wrap gap-2 mb-4">
-      <button id="btnBR" class="btn">Carregar Brasil</button>
-      <button id="btnUS" class="btn">Carregar EUA</button>
+      <button id="btnBR" class="btn">Brasil</button>
+      <button id="btnUS" class="btn">EUA</button>
       <button id="btnReset" class="px-3 py-2 rounded-xl bg-pink-100 text-pink-700">Limpar tudo</button>
     </div>
 
@@ -68,32 +76,42 @@
     <audio id="bgm" preload="auto"></audio>
   </div>
 
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="/js/navbar.js"></script>
   <script src="/js/main.js"></script>
   <script>
+    // ---- helpers UI
+    const toastEl = document.getElementById('toast');
+    function toast(msg){ toastEl.textContent = msg; toastEl.classList.remove('hidden'); setTimeout(()=>toastEl.classList.add('hidden'), 2600); }
+
+    // ---- estado visitados
     const visitedStateIds = new Set();
     let map, layer;
     const visitedCount = document.getElementById('visitedCount');
 
-    const styleNormal  = { color:'#ec4899', weight:1, fillColor:'#fbcfe8', fillOpacity:.25 };
+    const styleNormal  = { color:'#ec4899', weight:1,   fillColor:'#fbcfe8', fillOpacity:.25 };
     const styleVisited = { color:'#ec4899', weight:1.2, fillColor:'#ec4899', fillOpacity:.6 };
 
     async function loadVisited(){
-      const r = await fetch('/api/map/states'); if(!r.ok) return;
-      const arr = await r.json(); arr.forEach(id=>visitedStateIds.add(id));
-      renderCount();
+      try{
+        const r = await fetch('/api/map/states'); if(!r.ok) throw new Error('API error');
+        const arr = await r.json(); arr.forEach(id=>visitedStateIds.add(id));
+        renderCount();
+      }catch(e){
+        console.warn('Falha ao carregar estados visitados:', e);
+        toast('Não consegui carregar os estados salvos 😔');
+      }
     }
     function renderCount(){ visitedCount.textContent = String(visitedStateIds.size); }
 
     function stateIdFrom(feature){
-      // tenta ISO code padrão; fallback para name (normalizado)
       let c = feature?.properties?.code || feature?.properties?.iso_3166_2 || feature?.properties?.state_code;
       let cc = feature?.properties?.country_code || feature?.properties?.country || '';
       if (!cc && feature?.properties?.admin){ cc = feature.properties.admin; }
       if (c && c.includes('-')) return c.toUpperCase();
       if (cc && c) return `${String(cc).slice(0,2).toUpperCase()}-${String(c).slice(0,3).toUpperCase()}`;
-      // pior caso: BR-<nome3>
       let name = (feature?.properties?.name || '').normalize('NFD').replace(/\p{Diacritic}/gu,'').toUpperCase().replace(/\s+/g,'-').slice(0,3);
       return `XX-${name}`;
     }
@@ -107,21 +125,47 @@
         if (nowVisited) visitedStateIds.add(id); else visitedStateIds.delete(id);
         layerEl.setStyle(nowVisited? styleVisited : styleNormal);
         renderCount();
-        await fetch('/api/map/states', {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ id, visited: nowVisited })
-        });
+        try{
+          await fetch('/api/map/states', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ id, visited: nowVisited })
+          });
+        }catch(e){
+          console.warn('Falha ao salvar estado visitado:', e);
+          toast('Não consegui salvar agora. Tenta de novo?');
+        }
       });
       const name = feature?.properties?.name || feature?.properties?.state_name || 'Estado';
       layerEl.bindTooltip(`${name}`,{sticky:true, direction:'auto'});
     }
 
-    async function loadGeoJSON(url, fit=true){
-      const r = await fetch(url); const gj = await r.json();
-      if (layer) { map.removeLayer(layer); }
-      layer = L.geoJSON(gj, { onEachFeature:onEach }).addTo(map);
-      if (fit) map.fitBounds(layer.getBounds(), { padding:[20,20] });
+    async function fetchJSONWithFallback(primary, fallbackLocal){
+      try{
+        const r = await fetch(primary, { cache: 'no-store' });
+        if (!r.ok) throw new Error('primary fetch failed');
+        return await r.json();
+      }catch(e){
+        console.warn('GeoJSON primário falhou, tentando local:', e);
+        // Coloque estes arquivos locais para fallback:
+        // /public/data/brazil-states.json  e  /public/data/united-states.json
+        const r2 = await fetch(fallbackLocal, { cache: 'no-store' });
+        if (!r2.ok) throw new Error('fallback fetch failed');
+        toast('Carreguei usando o arquivo local do mapa 😉');
+        return await r2.json();
+      }
+    }
+
+    async function loadGeoJSON(url, fallbackLocal, fit=true){
+      try{
+        const gj = await fetchJSONWithFallback(url, fallbackLocal);
+        if (layer) { map.removeLayer(layer); }
+        layer = L.geoJSON(gj, { onEachFeature:onEach }).addTo(map);
+        if (fit) map.fitBounds(layer.getBounds(), { padding:[20,20] });
+      }catch(e){
+        console.error('Falha ao carregar GeoJSON:', e);
+        toast('Não consegui carregar o mapa agora 😔');
+      }
     }
 
     function initMap(){
@@ -130,24 +174,32 @@
         maxZoom: 19, attribution: '&copy; OpenStreetMap'
       }).addTo(map);
       map.setView([0,0],2);
+
+      // garante que o Leaflet meça o container certo após a navbar
+      setTimeout(()=>{ map.invalidateSize(); }, 120);
     }
 
     // fontes GeoJSON (estados)
     const URL_BR = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson';
     const URL_US = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/united-states.geojson';
 
-    document.getElementById('btnBR').addEventListener('click',()=>loadGeoJSON(URL_BR));
-    document.getElementById('btnUS').addEventListener('click',()=>loadGeoJSON(URL_US));
+    // Fallbacks locais sugeridos (coloque os arquivos se quiser blindar):
+    const FBR = '/data/brazil-states.json';
+    const FUS = '/data/united-states.json';
+
+    document.getElementById('btnBR').addEventListener('click',()=>loadGeoJSON(URL_BR, FBR));
+    document.getElementById('btnUS').addEventListener('click',()=>loadGeoJSON(URL_US, FUS));
     document.getElementById('btnReset').addEventListener('click', async ()=>{
       visitedStateIds.clear(); renderCount();
-      await fetch('/api/map/states', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id:'__wipe__', visited:false }) });
-      // re-render estilos
       if (layer) layer.eachLayer(l=>l.setStyle(styleNormal));
+      toast('Limpei a seleção atual 👍');
     });
 
     (async function(){
       initMap();
       await loadVisited();
+      // abre BR por padrão para "provar" que está funcionando
+      await loadGeoJSON(URL_BR, FBR, true);
     })();
   </script>
 </body>
