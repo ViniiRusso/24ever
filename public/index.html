@@ -18,13 +18,18 @@
   <link rel="stylesheet" href="https://unpkg.com/aos@2.3.1/dist/aos.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
 
+  <!-- Preload LCP images para melhorar FCP/LCP -->
+  <link rel="preload" as="image" href="/images/timeline/foto1.jpg">
+  <link rel="preload" as="image" href="/images/timeline/foto2.jpg">
+  <link rel="preload" as="image" href="/images/timeline/foto3.jpg">
+
   <style> body{font-family:Poppins,system-ui,Arial} </style>
 </head>
 <body class="pb-24">
   <div class="blob b1"></div><div class="blob b2"></div>
 
   <!-- NAVBAR -->
-  <nav class="nav fixed top-0 left-0 right-0 z-50">
+  <nav class="nav fixed top:0 left:0 right:0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="/" class="brand">24ever</a>
       <button class="hamb" aria-label="Abrir menu" aria-expanded="false">
@@ -77,13 +82,17 @@
     </section>
   </main>
 
-  <!-- Player da “história da música” REMOVIDO na Home a pedido -->
-
   <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+
+  <!-- teus scripts existentes -->
   <script src="/js/navbar.js"></script>
   <script src="/js/timeline.js"></script>
   <script src="/js/main.js"></script>
+
+  <!-- script específico do SW (novo) -->
+  <script src="/js/sw-register.js"></script>
+
   <script>AOS.init({ once:true, duration:800 });</script>
 </body>
 </html>

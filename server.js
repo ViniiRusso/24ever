@@ -64,6 +64,7 @@ const ASSET_EXT = /\.(css|js|mjs|png|jpg|jpeg|webp|gif|svg|ico|woff2?|map)$/i;
 app.use('/images', express.static(path.join(__dirname, 'public', 'images'), {
   setHeaders(res, filePath) {
     if (/\.(?:jpg|jpeg|png|webp|gif|svg)$/i.test(filePath)) {
+      // Cache muito agressivo nas imagens estáticas (com immutable)
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     }
   },
