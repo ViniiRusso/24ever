@@ -1,16 +1,6 @@
-// public/js/sw-register.js
+// Registra o Service Worker para manter timeline/js/css no cache entre páginas
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', async () => {
-      try {
-        const reg = await navigator.serviceWorker.getRegistration('/sw.js');
-        if (!reg) {
-          await navigator.serviceWorker.register('/sw.js');
-          console.log('[sw-register] registered /sw.js');
-        } else {
-          console.log('[sw-register] sw already registered');
-        }
-      } catch (err) {
-        console.warn('[sw-register] failed to register', err);
-      }
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(()=>{});
     });
   }

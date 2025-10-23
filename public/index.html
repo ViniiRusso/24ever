@@ -11,17 +11,19 @@
   <link rel="stylesheet" href="/styles.css" />
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- fontes/efeitos que você já usa -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/aos@2.3.1/dist/aos.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
 
-  <!-- Preload LCP images para melhorar FCP/LCP -->
-  <link rel="preload" as="image" href="/images/timeline/foto1.jpg">
-  <link rel="preload" as="image" href="/images/timeline/foto2.jpg">
-  <link rel="preload" as="image" href="/images/timeline/foto3.jpg">
+  <!-- Preload das 6 primeiras (acelera LCP e “voltar”) -->
+  <link rel="preload" as="image" href="/images/timeline/foto1.jpg" fetchpriority="high">
+  <link rel="preload" as="image" href="/images/timeline/foto2.jpg" fetchpriority="high">
+  <link rel="preload" as="image" href="/images/timeline/foto3.jpg" fetchpriority="high">
+  <link rel="preload" as="image" href="/images/timeline/foto4.jpg">
+  <link rel="preload" as="image" href="/images/timeline/foto5.jpg">
+  <link rel="preload" as="image" href="/images/timeline/foto6.jpg">
 
   <style> body{font-family:Poppins,system-ui,Arial} </style>
 </head>
@@ -29,7 +31,7 @@
   <div class="blob b1"></div><div class="blob b2"></div>
 
   <!-- NAVBAR -->
-  <nav class="nav fixed top:0 left:0 right:0 z-50">
+  <nav class="nav fixed top-0 left-0 right-0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="/" class="brand">24ever</a>
       <button class="hamb" aria-label="Abrir menu" aria-expanded="false">
@@ -84,15 +86,11 @@
 
   <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
-
-  <!-- teus scripts existentes -->
   <script src="/js/navbar.js"></script>
   <script src="/js/timeline.js"></script>
   <script src="/js/main.js"></script>
-
-  <!-- script específico do SW (novo) -->
+  <!-- registra o Service Worker (para manter imagens e JS no cache ao voltar) -->
   <script src="/js/sw-register.js"></script>
-
   <script>AOS.init({ once:true, duration:800 });</script>
 </body>
 </html>

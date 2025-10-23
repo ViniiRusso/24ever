@@ -1,20 +1,28 @@
-// Timeline com fallback de caminhos, captions.json opcional,
-// Swiper effect 'cards', e LIGHTBOX com swipe-down e pinch-zoom
+// Timeline com fallback de nomes, LIGHTBOX e correção para iOS (sem lazy em imagens criadas via JS)
 (async function(){
   const container = document.getElementById('timelineSlides');
   if (!container) return;
 
   const total = 59;
-  // ✅ só a pasta pública correta
-  const BASES = ['/images/timeline'];
+  const BASE = '/images/timeline';
 
-  const captions = await tryLoadCaptions();
+  // Safari iOS: bug com loading="lazy" em <img> criadas dinamicamente
+  const isIOS = /iP(ad|hone|od)/.test(navigator.platform) ||
+                (navigator.userAgent.includes('Mac') && 'ontouchend' in document);
 
-  // ---------- montar slides ----------
+  // captions opcional
+  let captions = null;
+  try {
+    const r = await fetch(`${BASE}/captions.json`, { cache: 'no-store' });
+    if (r.ok) captions = await r.json();
+  } catch {}
+
+  // cria slides
   const frag = document.createDocumentFragment();
   for (let i = 1; i <= total; i++) {
     const slide = document.createElement('div');
     slide.className = 'swiper-slide';
+
     const card = document.createElement('div');
     card.className = 'timeline-card bg-white rounded-2xl p-4 shadow group';
 
@@ -22,7 +30,7 @@
     p.className = 'mt-3 text-sm text-gray-600 text-center';
     p.textContent = `Legenda da foto ${i} 💗`;
 
-    const img = createSmartImg(i, p);
+    const img = createImg(i, p);
     img.dataset.index = String(i);
     img.style.cursor = 'zoom-in';
     img.addEventListener('click', () => openLightbox(Number(img.dataset.index)), {passive:true});
@@ -34,7 +42,7 @@
   }
   container.appendChild(frag);
 
-  // ---------- Swiper ----------
+  // Swiper
   new Swiper('.swiper', {
     speed: 650,
     effect: 'cards',
@@ -52,37 +60,35 @@
     }
   });
 
-  // ---------- helpers ----------
-  function createSmartImg(i, captionEl){
+  // helpers
+  function createImg(i, captionEl){
     const el = document.createElement('img');
-    el.loading = 'lazy';
+    if (!isIOS) el.loading = 'lazy';        // no iOS: não usa lazy
     el.decoding = 'async';
     el.fetchPriority = i <= 3 ? 'high' : 'auto';
     el.className = 'rounded-xl w-full h-64 object-cover';
     el.alt = `Foto ${i}`;
 
-    const nameCandidates = [
+    const names = [
       `foto${i}.jpg`,`Foto ${i}.JPG`,`Foto ${i}.jpg`,`foto ${i}.jpg`,
       `foto_${i}.jpg`,`foto${i}.jpeg`,`Foto ${i}.JPEG`,`foto${i}.png`
     ];
-    const urlCandidates = [];
-    for (const b of BASES) for (const n of nameCandidates)
-      urlCandidates.push(`${b}/${encodeURIComponent(n)}`);
+    const urls = names.map(n => `${BASE}/${encodeURIComponent(n)}`);
 
-    let idx = 0;
-    el.src = urlCandidates[idx];
+    let k = 0;
+    el.src = urls[k];
 
     el.onload = () => {
-      const usedFilename = decodeURIComponent(el.src.split('/').slice(-1)[0]);
-      const meta = getMetaFor(i, usedFilename, captions);
+      const used = decodeURIComponent(el.src.split('/').slice(-1)[0]);
+      const meta = getMeta(i, used);
       if (meta.caption && captionEl) captionEl.textContent = meta.caption;
       if (meta.alt) el.alt = meta.alt;
-      el.dataset.filename = usedFilename;
+      el.dataset.filename = used;
     };
 
     el.onerror = () => {
-      idx++;
-      if (idx < urlCandidates.length) el.src = urlCandidates[idx];
+      k++;
+      if (k < urls.length) el.src = urls[k];
       else {
         el.onerror = null;
         el.src = `data:image/svg+xml;charset=utf-8,`+encodeURIComponent(
@@ -98,27 +104,17 @@
     return el;
   }
 
-  async function tryLoadCaptions() {
-    for (const b of BASES) {
-      try {
-        const r = await fetch(`${b}/captions.json`, { cache: 'no-store' });
-        if (r.ok) return await r.json();
-      } catch {}
-    }
-    return null;
+  function getMeta(i, filename){
+    const fb = { caption: `Legenda da foto ${i} 💗`, alt: `Foto ${i}` };
+    if (!captions) return fb;
+    let e = captions[filename] || captions[String(filename).toLowerCase()] || captions[String(i)];
+    if (typeof e === 'string') return { caption: e || fb.caption, alt: e || fb.alt };
+    if (e && typeof e === 'object')
+      return { caption: e.caption || fb.caption, alt: e.alt || e.caption || fb.alt };
+    return fb;
   }
 
-  function getMetaFor(index, filename, caps) {
-    const fallback = { caption: `Legenda da foto ${index} 💗`, alt: `Foto ${index}` };
-    if (!caps) return fallback;
-    let entry = caps[filename] || caps[String(filename).toLowerCase()] || caps[String(index)];
-    if (typeof entry === 'string') return { caption: entry || fallback.caption, alt: entry || fallback.alt };
-    if (entry && typeof entry === 'object')
-      return { caption: entry.caption || fallback.caption, alt: entry.alt || entry.caption || fallback.alt };
-    return fallback;
-  }
-
-  // ---------- LIGHTBOX ----------
+  // LIGHTBOX (igual antes)
   const lb = createLightboxDOM();
   let pinch = {scale:1, start:1};
   let drag = {startY:0, deltaY:0, active:false};
@@ -154,7 +150,7 @@
     const imgEl = container.querySelector(`img[data-index="${index}"]`);
     const src = imgEl?.src || '';
     const filename = imgEl?.dataset.filename || '';
-    const meta = getMetaFor(index, filename, captions);
+    const meta = getMeta(index, filename);
 
     lb.img.src = src;
     lb.img.alt = meta.alt || `Foto ${index}`;
@@ -206,7 +202,6 @@
     btnPrev.addEventListener('click', () => renderLightbox(lb.current - 1), {passive:true});
     btnNext.addEventListener('click', () => renderLightbox(lb.current + 1), {passive:true});
 
-    // swipe-down para fechar
     dialog.addEventListener('touchstart', (e)=>{
       if (e.touches.length !== 1) return;
       drag.active = true; drag.startY = e.touches[0].clientY; drag.deltaY = 0;
