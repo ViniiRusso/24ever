@@ -1,6 +1,6 @@
-// Inicialização preguiçosa + melhorias iOS (sem double-tap zoom)
+// games.js — lazy init dos jogos + D-pad mobile + anti double-tap zoom
 (function(){
-  // bloquear double-tap zoom globalmente nos jogos
+  // anti double-tap zoom global na página de jogos
   let last = 0;
   document.addEventListener('touchend', (e)=>{
     const now = Date.now();

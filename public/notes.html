@@ -15,9 +15,11 @@
     .note-item.active{outline:2px solid #ec4899; background:#fff;}
     .note-title{font-weight:600;}
     .note-preview{font-size:.85rem; color:#64748b;}
+    textarea{resize:none; overflow:hidden;}
   </style>
 </head>
 <body class="pb-24">
+  <!-- NAVBAR -->
   <nav class="nav fixed top-0 left-0 right-0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="/" class="brand">24ever</a>
@@ -25,6 +27,7 @@
       <div class="links">
         <a href="/">Home</a>
         <a href="/games">Games</a>
+        <a href="/calendar">Calendar</a>
         <a href="/map">Our Map</a>
         <a href="/notes">Notes</a>
         <a href="/links">Links</a>
@@ -36,6 +39,7 @@
     <div class="drawer-inner">
       <a href="/" class="drawer-link">Home</a>
       <a href="/games" class="drawer-link">Games</a>
+      <a href="/calendar" class="drawer-link">Calendar</a>
       <a href="/map" class="drawer-link">Our Map</a>
       <a href="/notes" class="drawer-link">Notes</a>
       <a href="/links" class="drawer-link">Links</a>
@@ -89,9 +93,11 @@
     const textEl  = document.getElementById('noteText');
     const metaEl  = document.getElementById('currentMeta');
 
-    /** estado atual */
-    let notes = [];      // [{id, text, ts}]
-    let current = null;  // id
+    let notes = [];
+    let current = null;
+
+    function autoResize(){ this.style.height='auto'; this.style.height=this.scrollHeight+'px'; }
+    textEl.addEventListener('input', autoResize);
 
     function titleFrom(text){
       const first = (text || '').split('\n')[0].trim();
@@ -135,12 +141,18 @@
       metaEl.textContent = `Editando: ${titleFrom(n.text)} — ${d.toLocaleString()}`;
       saveBtn.disabled = false; delBtn.disabled = false;
       renderList();
+      autoResize.call(textEl);
     }
 
     async function refresh(){
-      const r = await fetch('/api/notes'); notes = await r.json();
-      renderList();
-      if (notes.length && !current) setCurrent(notes[0].id);
+      try {
+        const r = await fetch('/api/notes'); 
+        notes = await r.json();
+        renderList();
+        if (notes.length && !current) setCurrent(notes[0].id);
+      } catch(e){
+        console.warn(e);
+      }
     }
 
     listEl.addEventListener('click', (e)=>{
@@ -150,35 +162,41 @@
     });
 
     newBtn.addEventListener('click', async ()=>{
-      const r = await fetch('/api/notes', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ text: '' })
-      });
-      const created = await r.json();
-      await refresh();
-      setCurrent(created.id);
-      textEl.focus();
+      try{
+        const r = await fetch('/api/notes', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ text: '' })
+        });
+        const created = await r.json();
+        await refresh();
+        setCurrent(created.id);
+        textEl.focus();
+      }catch(e){ console.warn(e); }
     });
 
     saveBtn.addEventListener('click', async ()=>{
       if (!current) return;
-      const r = await fetch(`/api/notes/${current}`, {
-        method:'PATCH', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ text: textEl.value })
-      });
-      if (r.ok){
-        await refresh();
-        setCurrent(current);
-      }
+      try{
+        const r = await fetch(`/api/notes/${current}`, {
+          method:'PATCH', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ text: textEl.value })
+        });
+        if (r.ok){
+          await refresh();
+          setCurrent(current);
+        }
+      }catch(e){ console.warn(e); }
     });
 
     delBtn.addEventListener('click', async ()=>{
       if (!current) return;
       if (!confirm('Apagar esta nota?')) return;
-      await fetch(`/api/notes/${current}`, { method:'DELETE' });
-      current = null;
-      await refresh();
-      setCurrent(notes[0]?.id || null);
+      try{
+        await fetch(`/api/notes/${current}`, { method:'DELETE' });
+        current = null;
+        await refresh();
+        setCurrent(notes[0]?.id || null);
+      }catch(e){ console.warn(e); }
     });
 
     refresh();

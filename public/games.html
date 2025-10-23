@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="format-detection" content="telephone=no">
@@ -20,6 +20,7 @@
 <body class="pb-24">
   <div class="blob b1"></div><div class="blob b2"></div>
 
+  <!-- NAVBAR unificada -->
   <nav class="nav fixed top-0 left-0 right-0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="/" class="brand">24ever</a>
@@ -29,6 +30,7 @@
         <a href="/games">Games</a>
         <a href="/map">Our Map</a>
         <a href="/notes">Notes</a>
+        <a href="/calendar">Our Calendar</a>
         <a href="/links">Links</a>
         <form action="/logout" method="post" class="logout"><button> sair </button></form>
       </div>
@@ -40,6 +42,7 @@
       <a href="/games" class="drawer-link">Games</a>
       <a href="/map" class="drawer-link">Our Map</a>
       <a href="/notes" class="drawer-link">Notes</a>
+      <a href="/calendar" class="drawer-link">Our Calendar</a>
       <a href="/links" class="drawer-link">Links</a>
       <form action="/logout" method="post"><button class="drawer-link">sair</button></form>
     </div>
@@ -127,11 +130,11 @@
 
   <script>
     /* Bloqueia double-tap zoom no iOS dentro da página de jogos */
-    let lastTouch = 0;
+    let __lastTouch = 0;
     document.addEventListener('touchend', (e)=>{
       const now = Date.now();
-      if (now - lastTouch < 350) { e.preventDefault(); }
-      lastTouch = now;
+      if (now - __lastTouch < 350) { e.preventDefault(); }
+      __lastTouch = now;
     }, {passive:false});
   </script>
   <script src="/js/navbar.js"></script>

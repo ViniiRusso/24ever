@@ -36,12 +36,11 @@
       </button>
       <div class="links">
         <a href="/">Home</a>
-        <a href="/#contador">Countdown</a>
-        <a href="/#timeline">Our Moments</a>
         <a href="/games">Games</a>
-        <a href="/calendar">Our Calendar</a>
+        <a href="/calendar">Calendar</a>
+        <a href="/map">Our Map</a>
+        <a href="/notes">Notes</a>
         <a href="/links">Links</a>
-        <a href="/travel">Our Travels</a>
         <form action="/logout" method="post" class="logout"><button> sair </button></form>
       </div>
     </div>
@@ -49,12 +48,11 @@
   <aside id="drawer" class="drawer">
     <div class="drawer-inner">
       <a href="/" class="drawer-link">Home</a>
-      <a href="/#contador" class="drawer-link">Countdown</a>
-      <a href="/#timeline" class="drawer-link">Our Moments</a>
       <a href="/games" class="drawer-link">Games</a>
-      <a href="/calendar" class="drawer-link">Our Calendar</a>
+      <a href="/calendar" class="drawer-link">Calendar</a>
+      <a href="/map" class="drawer-link">Our Map</a>
+      <a href="/notes" class="drawer-link">Notes</a>
       <a href="/links" class="drawer-link">Links</a>
-      <a href="/travel" class="drawer-link">Our Travels</a>
       <form action="/logout" method="post"><button class="drawer-link">sair</button></form>
     </div>
   </aside>
@@ -63,12 +61,13 @@
     <div class="flex items-end justify-between mb-6" data-aos="fade-up">
       <div>
         <h1 class="text-3xl font-extrabold">Our Calendar</h1>
-        <p class="text-sm text-gray-600 mt-1">Adicione eventos para usarmos juntos 💖</p>
+        <p class="text-sm text-gray-600 mt-1">Adicione eventos para nós 💖</p>
       </div>
       <div class="hidden sm:block text-xs text-gray-500"><span id="tzLabel"></span></div>
     </div>
 
     <div class="grid md:grid-cols-3 gap-6">
+      <!-- Painel esquerdo -->
       <div class="glass p-4" data-aos="fade-right">
         <h3 class="font-semibold mb-2">Criar evento</h3>
         <form id="evtForm" class="space-y-2">
@@ -92,7 +91,7 @@
           </label>
 
           <div class="flex items-center gap-2 pt-2">
-            <button class="btn" type="submit">Adicionar evento</button>
+            <button class="btn" type="submit">Adicionar</button>
             <button id="clearForm" type="button" class="px-3 py-2 rounded-xl bg-pink-100 text-pink-700 text-sm">Limpar</button>
           </div>
         </form>
@@ -104,6 +103,7 @@
         </div>
       </div>
 
+      <!-- Calendário -->
       <div class="md:col-span-2 glass p-4" data-aos="fade-left">
         <div id="calendar" class="rounded-xl overflow-hidden"></div>
       </div>
@@ -121,6 +121,127 @@
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
   <script src="/js/navbar.js"></script>
   <script src="/js/main.js"></script>
-  <script src="/js/calendar.js"></script>
+  <script>
+    AOS.init({ once: true, duration: 800, easing: 'ease-out' });
+
+    // toast simples
+    function toast(msg) {
+      const el = document.createElement('div');
+      el.className = 'fixed bottom-16 left-1/2 -translate-x-1/2 bg-pink-600 text-white px-4 py-2 rounded-xl shadow-lg transition';
+      el.textContent = msg;
+      document.body.appendChild(el);
+      setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translate(-50%, 10px)'; }, 1600);
+      setTimeout(() => el.remove(), 2100);
+    }
+
+    function fmt(dt) {
+      try { return new Date(dt).toLocaleString(); } catch { return dt; }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local time';
+      const tzLabel = document.getElementById('tzLabel');
+      if (tzLabel) tzLabel.textContent = `⏰ ${tz}`;
+
+      const calendarEl = document.getElementById('calendar');
+      const listWrap   = document.getElementById('eventsList');
+      const form       = document.getElementById('evtForm');
+      const clearBtn   = document.getElementById('clearForm');
+
+      const calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        height: 600,
+        headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek' },
+        selectable: true,
+        selectMirror: true,
+        select(info) {
+          document.getElementById('evStart').value = info.startStr.slice(0, 16);
+          document.getElementById('evEnd').value   = info.endStr ? info.endStr.slice(0, 16) : '';
+          document.getElementById('evAll').checked = true;
+          document.getElementById('evTitle').focus();
+        },
+        eventClick(info) {
+          if (confirm(`Remover o evento "${info.event.title}"?`)) {
+            fetch('/api/events/' + info.event.id, { method: 'DELETE' })
+              .then(() => { loadEvents(); toast('Evento removido'); })
+              .catch(() => toast('Erro ao remover'));
+          }
+        }
+      });
+      calendar.render();
+
+      function renderEventsList(events) {
+        listWrap.innerHTML = '';
+        if (!events.length) {
+          listWrap.innerHTML = '<div class="text-gray-500">Nenhum evento</div>';
+          return;
+        }
+        events.sort((a, b) => new Date(b.start) - new Date(a.start));
+        events.slice(0, 8).forEach(ev => {
+          const el = document.createElement('div');
+          el.className = 'flex items-center justify-between p-2 border rounded-xl bg-white/60 hover:shadow transition';
+          el.innerHTML = `
+            <div class="mr-3">
+              <div class="font-medium">${ev.title}</div>
+              <div class="text-[11px] text-gray-500">
+                ${fmt(ev.start)}${ev.end ? (' → ' + fmt(ev.end)) : ''}${ev.allDay ? ' • dia todo' : ''}
+              </div>
+            </div>
+            <button data-id="${ev.id}" class="px-2 py-1 text-xs rounded-lg bg-pink-100 text-pink-700 hover:bg-pink-200">Remover</button>`;
+          listWrap.appendChild(el);
+        });
+
+        listWrap.querySelectorAll('button[data-id]').forEach(b=>{
+          b.addEventListener('click', () => {
+            const id = b.getAttribute('data-id');
+            if (!confirm('Remover?')) return;
+            fetch('/api/events/' + id, { method: 'DELETE' })
+              .then(() => { loadEvents(); toast('Evento removido'); })
+              .catch(() => toast('Erro ao remover'));
+          });
+        });
+      }
+
+      function loadEvents() {
+        fetch('/api/events')
+          .then(r => r.json())
+          .then(events => {
+            calendar.removeAllEvents();
+            events.forEach(e => {
+              calendar.addEvent({ id: e.id, title: e.title, start: e.start, end: e.end || null, allDay: !!e.allDay });
+            });
+            renderEventsList(events);
+          })
+          .catch(() => toast('Erro ao carregar eventos'));
+      }
+
+      loadEvents();
+
+      form.addEventListener('submit', e => {
+        e.preventDefault();
+        const title  = document.getElementById('evTitle').value.trim();
+        const start  = document.getElementById('evStart').value;
+        const end    = document.getElementById('evEnd').value;
+        const allDay = document.getElementById('evAll').checked;
+
+        if (!title || !start) { alert('Título e início obrigatórios'); return; }
+
+        fetch('/api/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, start, end: end || null, allDay })
+        })
+        .then(r => r.json())
+        .then(() => {
+          form.reset();
+          loadEvents();
+          toast('Evento adicionado');
+        })
+        .catch(() => toast('Erro ao adicionar'));
+      });
+
+      clearBtn.addEventListener('click', () => form.reset());
+    });
+  </script>
 </body>
 </html>

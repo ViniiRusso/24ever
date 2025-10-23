@@ -10,17 +10,20 @@
 
   <link rel="stylesheet" href="/styles.css" />
   <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- fontes/efeitos que você já usa -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/aos@2.3.1/dist/aos.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+
   <style> body{font-family:Poppins,system-ui,Arial} </style>
 </head>
 <body class="pb-24">
   <div class="blob b1"></div><div class="blob b2"></div>
 
-  <!-- NAVBAR unificada -->
+  <!-- NAVBAR -->
   <nav class="nav fixed top-0 left-0 right-0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="/" class="brand">24ever</a>
@@ -30,6 +33,7 @@
       <div class="links">
         <a href="/">Home</a>
         <a href="/games">Games</a>
+        <a href="/calendar">Calendar</a>
         <a href="/map">Our Map</a>
         <a href="/notes">Notes</a>
         <a href="/links">Links</a>
@@ -43,6 +47,7 @@
     <div class="drawer-inner">
       <a href="/" class="drawer-link">Home</a>
       <a href="/games" class="drawer-link">Games</a>
+      <a href="/calendar" class="drawer-link">Calendar</a>
       <a href="/map" class="drawer-link">Our Map</a>
       <a href="/notes" class="drawer-link">Notes</a>
       <a href="/links" class="drawer-link">Links</a>
@@ -72,13 +77,7 @@
     </section>
   </main>
 
-  <!-- Player -->
-  <div id="audioBar" class="bg-white/80 border-t p-2 flex items-center gap-3">
-    <button id="playPause" class="px-3 py-1 rounded-lg bg-pink-500 text-white text-sm">Tocar</button>
-    <input id="volume" type="range" min="0" max="1" step="0.01" value="0.6" />
-    <span id="currentTrack" class="text-xs text-gray-600"></span>
-    <audio id="bgm" preload="auto"></audio>
-  </div>
+  <!-- Player da “história da música” REMOVIDO na Home a pedido -->
 
   <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
