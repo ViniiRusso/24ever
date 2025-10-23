@@ -19,14 +19,18 @@ const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', 1); // Render/Cloudflare
 
-// (REMOVIDO) redirecionamento canônico HTTPS/WWW para evitar loops de login
-// // const CANON_HOST = 'www.24ever.com.br';
-// // app.use((req, res, next) => {
-// //   const host = req.headers.host || '';
-// //   if (!req.secure) return res.redirect(301, `https://${host}${req.originalUrl}`);
-// //   if (host !== CANON_HOST) return res.redirect(301, `https://${CANON_HOST}${req.originalUrl}`);
-// //   next();
-// // });
+// ── Canonical: força HTTPS e WWW no domínio final
+const CANON_HOST = 'www.24ever.com.br';
+app.use((req, res, next) => {
+  const host = req.headers.host || '';
+  if (!req.secure) {
+    return res.redirect(301, `https://${host}${req.originalUrl}`);
+  }
+  if (host !== CANON_HOST) {
+    return res.redirect(301, `https://${CANON_HOST}${req.originalUrl}`);
+  }
+  next();
+});
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.urlencoded({ extended: true }));
@@ -45,23 +49,35 @@ app.use(session({
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: isProd,                 // precisa https em prod
-    // (REMOVIDO) domain fixo — deixa o browser resolver
-    maxAge: 1000 * 60 * 60 * 24 * 7 // 7 dias
+    secure: isProd,
+    domain: isProd ? '.24ever.com.br' : undefined,
+    maxAge: 1000 * 60 * 60 * 24 * 7,
   }
 }));
 
-// ── Só assets públicos antes do login (cache forte)
+// ── Assets públicos ANTES do login
 const ASSET_EXT = /\.(css|js|mjs|png|jpg|jpeg|webp|gif|svg|ico|woff2?|map)$/i;
+
+// 1) rota dedicada para imagens (garante /images/** sempre público)
+app.use('/images', express.static(path.join(__dirname, 'public', 'images'), {
+  setHeaders(res, filePath) {
+    if (/\.(?:jpg|jpeg|png|webp|gif|svg)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  },
+  index: false,
+}));
+
+// 2) demais assets públicos por extensão
 app.use((req, res, next) => {
   if (ASSET_EXT.test(req.path)) {
     return express.static(path.join(__dirname, 'public'), {
-      index: false,
       setHeaders(res, filePath) {
         if (/\.(?:js|css|jpg|jpeg|png|webp|gif|svg|woff2?)$/i.test(filePath)) {
           res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         }
-      }
+      },
+      index: false,
     })(req, res, next);
   }
   next();
@@ -84,7 +100,6 @@ async function doAuth(req, res) {
   const okFile = PASSWORD_HASH && await bcrypt.compare(String(password || ''), PASSWORD_HASH);
   if (!(okEnv || okFile)) return res.redirect('/login?e=1');
 
-  // Regenera e salva a sessão ANTES de redirecionar
   req.session.regenerate(err => {
     if (err) return res.redirect('/login?e=1');
     req.session.userId = 'u1';
@@ -96,8 +111,7 @@ app.post('/login', doAuth);
 
 app.post('/logout', (req, res) => {
   req.session.destroy(() => {
-    // (REMOVIDO) domain fixo no clearCookie
-    res.clearCookie('s24');
+    res.clearCookie('s24', { domain: isProd ? '.24ever.com.br' : undefined });
     res.redirect('/login');
   });
 });
@@ -109,7 +123,7 @@ function requireAuth(req, res, next) {
 }
 app.use(requireAuth);
 
-// ── Estáticos (depois de logado; inclui HTML)
+// ── Estáticos (depois de logado)
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // ── Páginas
@@ -120,7 +134,7 @@ app.get('/calendar',(_, res) => res.sendFile(path.join(__dirname, 'public', 'cal
 app.get('/notes',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'notes.html')));
 app.get('/links',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'links.html')));
 
-// ── DATA (persistência em arquivo; usa volume se existir)
+// ── DATA
 const DATA_DIR = process.env.DATA_DIR || '/opt/render/project/src/data';
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const EVENTS_FILE = path.join(DATA_DIR, 'events.json');
@@ -132,7 +146,6 @@ const readJSON  = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } 
 const writeJSON = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2));
 
 // ── APIs
-// Calendar
 app.get('/api/events', (_req, res) => res.json(readJSON(EVENTS_FILE)));
 app.post('/api/events', (req, res) => {
   const { id, title, start, end, allDay } = req.body || {};
@@ -146,11 +159,10 @@ app.delete('/api/events/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// Notes
 app.get('/api/notes', (_req, res) => res.json(readJSON(NOTES_FILE)));
 app.post('/api/notes', (req, res) => {
-  // aceita texto vazio para criar e editar depois
-  const text = (req.body && typeof req.body.text === 'string') ? req.body.text : '';
+  const { text } = req.body || {};
+  if (!text) return res.status(400).json({ error: 'missing text' });
   const notes = readJSON(NOTES_FILE);
   const note = { id: crypto.randomUUID(), text, ts: Date.now() };
   notes.unshift(note); writeJSON(NOTES_FILE, notes); res.json(note);
@@ -159,7 +171,7 @@ app.patch('/api/notes/:id', (req, res) => {
   const notes = readJSON(NOTES_FILE);
   const i = notes.findIndex(n => n.id === req.params.id);
   if (i === -1) return res.status(404).json({ error: 'not found' });
-  notes[i].text = (typeof req.body.text === 'string') ? req.body.text : notes[i].text;
+  notes[i].text = req.body.text ?? notes[i].text;
   notes[i].ts   = Date.now();
   writeJSON(NOTES_FILE, notes); res.json(notes[i]);
 });
@@ -168,7 +180,6 @@ app.delete('/api/notes/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// Map (estados visitados)
 app.get('/api/map/states', (_req, res) => res.json(readJSON(MAP_FILE)));
 app.post('/api/map/states', (req, res) => {
   const { id, visited } = req.body || {};
@@ -181,4 +192,5 @@ app.post('/api/map/states', (req, res) => {
 // 404 → home (protegida)
 app.use((_, res) => res.redirect('/'));
 
-app.listen(PORT, () => console.log(`✅ 24ever rodando na porta ${PORT}`));
+// start
+app.listen(PORT, () => console.log(`✅ 24ever em https://${CANON_HOST}`));
