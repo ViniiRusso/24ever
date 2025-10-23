@@ -1,4 +1,4 @@
-// server.js — login primeiro; sessão atrás de proxy (Render); assets públicos
+// server.js — login primeiro; sessão atrás de proxy (Render); assets públicos; HTTPS+host canônico
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -11,13 +11,20 @@ import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 
 dotenv.config();
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// *** IMPORTANTE no Render (proxy) para cookies secure funcionarem
+// ====== CONFIG DE PRODUÇÃO (ajuste no Render) ======
+const NODE_ENV       = process.env.NODE_ENV || 'development';
+const IS_PROD        = NODE_ENV === 'production';
+const CANONICAL_HOST = process.env.CANONICAL_HOST || 'www.24ever.com.br'; // seu domínio com www
+const COOKIE_DOMAIN  = process.env.COOKIE_DOMAIN  || '.24ever.com.br';     // deixe vazio se usar onrender
+
+// Render/Cloudflare passam por proxy -> necessário p/ cookie secure & req.secure
 app.set('trust proxy', 1);
 
 // segurança & perf
@@ -26,22 +33,48 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(compression());
 
+// ---- força HTTPS e host canônico em produção ----
+if (IS_PROD) {
+  app.use((req, res, next) => {
+    const host = req.headers.host || '';
+    const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+
+    // força HTTPS
+    if (!isSecure) {
+      return res.redirect(301, 'https://' + host + req.originalUrl);
+    }
+
+    // força host canônico (só se CANONICAL_HOST estiver setado e diferente do atual)
+    if (CANONICAL_HOST && host !== CANONICAL_HOST) {
+      return res.redirect(301, 'https://' + CANONICAL_HOST + req.originalUrl);
+    }
+
+    next();
+  });
+}
+
 // sessão
 const SESSION_SECRET = process.env.SESSION_SECRET || 'please-change-this-secret';
+const cookieOpts = {
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: IS_PROD, // com Cloudflare + HTTPS
+  maxAge: 1000 * 60 * 60 * 24 * 7 // 7 dias
+};
+// define domain só se você estiver no domínio próprio
+if (IS_PROD && COOKIE_DOMAIN && COOKIE_DOMAIN !== 'onrender') {
+  cookieOpts.domain = COOKIE_DOMAIN;
+}
+
 app.use(session({
   name: 's24',
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production', // no Render é true
-    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 dias
-  }
+  cookie: cookieOpts
 }));
 
-// só ASSETS públicos (css/js/img/woff...). NUNCA html aqui!
+// ====== ASSETS (css/js/img/woff) servidos publicamente, com cache forte ======
 const ASSET_EXT = /\.(css|js|mjs|png|jpg|jpeg|webp|gif|svg|ico|woff2?|map)$/i;
 app.use((req, res, next) => {
   if (ASSET_EXT.test(req.path)) {
@@ -57,9 +90,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// ---------- LOGIN (público)
+// ====== LOGIN (público) ======
 app.get('/login', (req, res) => {
   if (req.session.userId) return res.redirect('/');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
@@ -72,10 +106,9 @@ async function doAuth(req, res) {
 
   const okEnv  = APP_PASSWORD_PLAIN && password === APP_PASSWORD_PLAIN;
   const okFile = PASSWORD_HASH && await bcrypt.compare(String(password || ''), PASSWORD_HASH);
-
   if (!(okEnv || okFile)) return res.redirect('/login?e=1');
 
-  // Regenera a sessão e salva ANTES de redirecionar
+  // regenera e salva ANTES do redirect (corrige login “travado” no celular)
   req.session.regenerate(err => {
     if (err) return res.redirect('/login?e=1');
     req.session.userId = 'u1';
@@ -87,30 +120,30 @@ app.post('/login', doAuth);
 
 app.post('/logout', (req, res) => {
   req.session.destroy(() => {
-    res.clearCookie('s24');
+    res.clearCookie('s24', cookieOpts);
     res.redirect('/login');
   });
 });
 
-// ---------- exige auth daqui pra baixo
+// ====== PROTEÇÃO: tudo abaixo exige estar logado ======
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.redirect('/login');
   next();
 }
 app.use(requireAuth);
 
-// estáticos completos (inclui html) só após auth
+// agora pode servir html protegido
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
-// páginas protegidas
-app.get('/',        (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-app.get('/games',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'games.html')));
-app.get('/map',     (_, res) => res.sendFile(path.join(__dirname, 'public', 'map.html')));
-app.get('/calendar',(_, res) => res.sendFile(path.join(__dirname, 'public', 'calendar.html')));
-app.get('/notes',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'notes.html')));
-app.get('/links',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'links.html')));
+// páginas
+app.get('/',         (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/games',    (_, res) => res.sendFile(path.join(__dirname, 'public', 'games.html')));
+app.get('/map',      (_, res) => res.sendFile(path.join(__dirname, 'public', 'map.html')));
+app.get('/calendar', (_, res) => res.sendFile(path.join(__dirname, 'public', 'calendar.html')));
+app.get('/notes',    (_, res) => res.sendFile(path.join(__dirname, 'public', 'notes.html')));
+app.get('/links',    (_, res) => res.sendFile(path.join(__dirname, 'public', 'links.html')));
 
-// ---------- DATA (persistência em arquivo; aponta para volume se existir)
+// ====== DATA (persistência em arquivo) ======
 const DATA_DIR = process.env.DATA_DIR || '/opt/render/project/src/data';
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const EVENTS_FILE = path.join(DATA_DIR, 'events.json');
@@ -165,7 +198,10 @@ app.post('/api/map/states', (req, res) => {
   const arr = [...set]; writeJSON(MAP_FILE, arr); res.json(arr);
 });
 
-// 404 → home (protegida)
+// 404 -> home (protegida)
 app.use((_, res) => res.redirect('/'));
 
-app.listen(PORT, () => console.log(`✅ 24ever rodando em http://localhost:${PORT}`));
+// start
+app.listen(PORT, () => {
+  console.log(`✅ 24ever rodando em http://localhost:${PORT} (env=${NODE_ENV})`);
+});
