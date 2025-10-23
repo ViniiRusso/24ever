@@ -23,9 +23,11 @@ app.set('trust proxy', 1); // Render/Cloudflare
 const CANON_HOST = 'www.24ever.com.br';
 app.use((req, res, next) => {
   const host = req.headers.host || '';
+  // força https
   if (!req.secure) {
     return res.redirect(301, `https://${host}${req.originalUrl}`);
   }
+  // força www
   if (host !== CANON_HOST) {
     return res.redirect(301, `https://${CANON_HOST}${req.originalUrl}`);
   }
@@ -58,7 +60,7 @@ app.use(session({
 // ── Assets públicos ANTES do login
 const ASSET_EXT = /\.(css|js|mjs|png|jpg|jpeg|webp|gif|svg|ico|woff2?|map)$/i;
 
-// 1) rota dedicada para imagens (garante /images/** sempre público)
+// 1) rota dedicada para IMAGENS (garante /images/** sempre público, cache forte)
 app.use('/images', express.static(path.join(__dirname, 'public', 'images'), {
   setHeaders(res, filePath) {
     if (/\.(?:jpg|jpeg|png|webp|gif|svg)$/i.test(filePath)) {
@@ -68,7 +70,7 @@ app.use('/images', express.static(path.join(__dirname, 'public', 'images'), {
   index: false,
 }));
 
-// 2) demais assets públicos por extensão
+// 2) demais assets públicos por extensão (css/js/woff etc) com cache forte
 app.use((req, res, next) => {
   if (ASSET_EXT.test(req.path)) {
     return express.static(path.join(__dirname, 'public'), {
@@ -79,6 +81,14 @@ app.use((req, res, next) => {
       },
       index: false,
     })(req, res, next);
+  }
+  next();
+});
+
+// (opcional) desabilita cache para HTML (evita colar telas antigas)
+app.use((req, res, next) => {
+  if (req.method === 'GET' && req.headers.accept && req.headers.accept.includes('text/html')) {
+    res.setHeader('Cache-Control', 'no-store');
   }
   next();
 });
