@@ -1,7 +1,6 @@
-// public/js/games.js — COLE o arquivo inteiro
-
+// public/js/games.js
 (function(){
-  // Evita zoom por double-tap no iOS dentro da página de jogos
+  // Evita zoom por double-tap no iOS na página de jogos
   let last = 0;
   document.addEventListener('touchend', (e)=>{
     const now = Date.now();
@@ -9,15 +8,14 @@
     last = now;
   }, {passive:false});
 
-  // 2048 (seu script existente usa window.Game2048; mantemos)
+  // 2048
   const btn2048 = document.getElementById('btn2048');
-  const c2048 = document.getElementById('game2048');
-  const score2048 = document.getElementById('score2048');
+  const c2048   = document.getElementById('game2048');
 
   if (btn2048 && c2048 && window.Game2048){
     btn2048.addEventListener('click', ()=>{
+      c2048.classList.remove('hidden');
       if (!window.Game2048.isRunning()){
-        c2048.classList.remove('hidden');
         window.Game2048.start();
         btn2048.textContent = 'Reiniciar 2048';
       } else {

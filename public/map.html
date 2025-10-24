@@ -53,7 +53,7 @@
     <header class="flex items-end justify-between mb-4">
       <div>
         <h1 class="text-2xl font-extrabold">Our Map</h1>
-        <p class="text-sm text-gray-600 mt-1">Toque nos <b>estados</b> do Brasil e dos EUA para marcar onde já fomos 💖</p>
+        <p class="text-sm text-gray-600 mt-1">Toque nos <b>estados</b> para marcar onde já fomos 💖</p>
       </div>
       <div class="text-sm text-gray-600">
         <span class="legend-dot"></span> Visitado • <span id="visitedCount">0</span> estados
@@ -61,7 +61,7 @@
     </header>
 
     <div class="map-wrap">
-      <div id="map" role="region" aria-label="Mapa por estados do Brasil e EUA"></div>
+      <div id="map" role="region" aria-label="Mapa por estados"></div>
     </div>
   </main>
 
@@ -84,62 +84,56 @@
 
     // ---- estado visitados
     const visitedStateIds = new Set();
+    let map, layerBR, layerUS;
     const visitedCount = document.getElementById('visitedCount');
+
     const styleNormal  = { color:'#ec4899', weight:1,   fillColor:'#fbcfe8', fillOpacity:.25 };
     const styleVisited = { color:'#ec4899', weight:1.2, fillColor:'#ec4899', fillOpacity:.6 };
 
-    let map, layerBR, layerUS;
-
-    function renderCount(){ visitedCount.textContent = String(visitedStateIds.size); }
-
     async function loadVisited(){
       try{
-        const r = await fetch('/api/map/states'); if(!r.ok) throw new Error('API error');
-        const arr = await r.json(); arr.forEach(id=>visitedStateIds.add(id));
+        const r = await fetch('/api/map/states'); 
+        if (!r.ok) throw new Error('API error');
+        const arr = await r.json();
+        visitedStateIds.clear();
+        for (const id of arr) visitedStateIds.add(id);
         renderCount();
       }catch(e){
         console.warn('Falha ao carregar estados visitados:', e);
         toast('Não consegui carregar os estados salvos 😔');
       }
     }
+    function renderCount(){ visitedCount.textContent = String(visitedStateIds.size); }
 
-    // Normaliza um ID estável para salvar
-    // BR: propriedades diferentes entre fontes — tentamos code, sigla, name, etc.
-    function idFromBR(f){
-      const p = f.properties || {};
-      const sigla = (p.sigla || p.code || p.UF || '').toString().trim().toUpperCase();
-      if (sigla) return `BR-${sigla}`;
-      const name = (p.name || p.NOME || '').normalize('NFD').replace(/\p{Diacritic}/gu,'').toUpperCase();
-      const mapSigla = {
-        'ACRE':'AC','ALAGOAS':'AL','AMAPA':'AP','AMAZONAS':'AM','BAHIA':'BA','CEARA':'CE',
-        'DISTRITO FEDERAL':'DF','ESPIRITO SANTO':'ES','GOIAS':'GO','MARANHAO':'MA','MATO GROSSO':'MT',
-        'MATO GROSSO DO SUL':'MS','MINAS GERAIS':'MG','PARA':'PA','PARAIBA':'PB','PARANA':'PR','PERNAMBUCO':'PE',
-        'PIAUI':'PI','RIO DE JANEIRO':'RJ','RIO GRANDE DO NORTE':'RN','RIO GRANDE DO SUL':'RS','RONDONIA':'RO',
-        'RORAIMA':'RR','SANTA CATARINA':'SC','SAO PAULO':'SP','SERGIPE':'SE','TOCANTINS':'TO'
-      };
-      if (mapSigla[name]) return `BR-${mapSigla[name]}`;
-      return `BR-${name.slice(0,3)}`;
+    // ID estável por feature (tenta várias propriedades comuns)
+    function stateIdFrom(feature){
+      const p = feature?.properties || {};
+      const code = (p.code || p.state_code || p.iso_3166_2 || '').toString();
+      const cc   = (p.country_code || p.country || p.admin || '').toString();
+      if (code && code.includes('-')) return code.toUpperCase();
+      if (cc && code) return `${cc.slice(0,2).toUpperCase()}-${code.slice(0,3).toUpperCase()}`;
+      const name = (p.name || p.state_name || '').normalize('NFD').replace(/\p{Diacritic}/gu,'').toUpperCase().replace(/\s+/g,'-').slice(0,3);
+      return `XX-${name}`;
     }
 
-    function idFromUS(f){
-      const p = f.properties || {};
-      // click_that_hood usa "name" e "state_code"; united-states.geojson costuma trazer "postal"
-      const code = (p.state_code || p.postal || p.STUSPS || '').toString().trim().toUpperCase();
-      if (code) return `US-${code}`;
-      const name = (p.name || p.NAME || '').toString().trim().toUpperCase();
-      if (name) return `US-${name.slice(0,3)}`;
-      return 'US-XX';
-    }
-
-    function attachHandlers(feature, layerEl, mkId, labelName){
-      const id = mkId(feature);
+    // anti duplo-toque (iOS pode disparar 2x)
+    let lastTap = 0;
+    function onEach(feature, layerEl){
+      const id = stateIdFrom(feature);
       const isVisited = visitedStateIds.has(id);
       layerEl.setStyle(isVisited? styleVisited : styleNormal);
+
       layerEl.on('click', async ()=>{
-        const nowVisited = !visitedStateIds.has(id);
+        const now = Date.now();
+        if (now - lastTap < 400) return; // ignora toque duplicado
+        lastTap = now;
+
+        const before = visitedStateIds.has(id);
+        const nowVisited = !before;
         if (nowVisited) visitedStateIds.add(id); else visitedStateIds.delete(id);
         layerEl.setStyle(nowVisited? styleVisited : styleNormal);
-        renderCount();
+        if (before !== nowVisited) renderCount();
+
         try{
           await fetch('/api/map/states', {
             method:'POST',
@@ -147,16 +141,14 @@
             body: JSON.stringify({ id, visited: nowVisited })
           });
         }catch(e){
-          console.warn('Falha ao salvar estado:', e);
+          console.warn('Falha ao salvar estado visitado:', e);
           toast('Não consegui salvar agora. Tenta de novo?');
         }
       });
-      const nm = labelName(feature);
-      layerEl.bindTooltip(nm,{sticky:true, direction:'auto'});
-    }
 
-    function brName(f){ return (f.properties?.name || f.properties?.NOME || 'Estado').toString(); }
-    function usName(f){ return (f.properties?.name || f.properties?.NAME || 'State').toString(); }
+      const name = feature?.properties?.name || feature?.properties?.state_name || 'Estado';
+      layerEl.bindTooltip(`${name}`,{sticky:true, direction:'auto'});
+    }
 
     async function fetchJSONWithFallback(primary, fallbackLocal){
       try{
@@ -167,32 +159,26 @@
         console.warn('GeoJSON primário falhou, tentando local:', e);
         const r2 = await fetch(fallbackLocal, { cache: 'no-store' });
         if (!r2.ok) throw new Error('fallback fetch failed');
-        toast('Carreguei o mapa usando o arquivo local 😉');
+        toast('Carreguei usando o arquivo local do mapa 😉');
         return await r2.json();
       }
     }
 
     async function loadBoth(){
-      // fontes públicas (funcionam bem)
-      const URL_BR = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson';
-      const URL_US = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/united-states.geojson';
-      // fallbacks locais opcionais
-      const FBR = '/data/brazil-states.json';
-      const FUS = '/data/united-states.json';
-
+      // BR + US juntos
       const [gjBR, gjUS] = await Promise.all([
         fetchJSONWithFallback(URL_BR, FBR),
-        fetchJSONWithFallback(URL_US, FUS)
+        fetchJSONWithFallback(URL_US, FUS),
       ]);
 
+      // Remove camadas antigas
       if (layerBR) map.removeLayer(layerBR);
       if (layerUS) map.removeLayer(layerUS);
 
-      layerBR = L.geoJSON(gjBR, { onEachFeature: (f, l)=>attachHandlers(f, l, idFromBR, brName) }).addTo(map);
-      layerUS = L.geoJSON(gjUS, { onEachFeature: (f, l)=>attachHandlers(f, l, idFromUS, usName) }).addTo(map);
+      layerBR = L.geoJSON(gjBR, { onEachFeature:onEach });
+      layerUS = L.geoJSON(gjUS, { onEachFeature:onEach });
 
-      // enquadra BR + US juntos
-      const group = L.featureGroup([layerBR, layerUS]);
+      const group = L.featureGroup([layerBR, layerUS]).addTo(map);
       map.fitBounds(group.getBounds(), { padding:[20,20] });
     }
 
@@ -205,10 +191,17 @@
       setTimeout(()=>{ map.invalidateSize(); }, 120);
     }
 
+    // fontes GeoJSON (estados)
+    const URL_BR = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson';
+    const URL_US = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/united-states.geojson';
+    // Fallbacks locais (se quiser blindar)
+    const FBR = '/data/brazil-states.json';
+    const FUS = '/data/united-states.json';
+
     (async function(){
       initMap();
       await loadVisited();
-      await loadBoth();
+      await loadBoth(); // carrega os dois juntos logo de cara
     })();
   </script>
 </body>
