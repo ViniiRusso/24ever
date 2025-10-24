@@ -1,257 +1,185 @@
-// public/js/game-tetris.js
+// game-tetris.js — expõe a mesma API usada pelo games.js:
+// window.initTetris({ canvas, preview, onScore, onLevel })
+// window.resetTetris()
+// window.togglePauseTetris()
+// window.ctrlTetris(action: 'left'|'right'|'soft'|'hard'|'rotate')
+
 (function(){
-  const tCanvas = document.getElementById('tetris');
-  const nextCanvas = document.getElementById('nextPiece');
-  if (!tCanvas || !nextCanvas) return;
+  let cfg = null;
+  let ctx, pctx;          // canvas principal e preview
+  let dpr = Math.max(1, window.devicePixelRatio || 1);
 
-  const scoreEl = document.getElementById('tScore');
-  const levelEl = document.getElementById('tLevel');
+  const COLS=10, ROWS=20, BS=24; // BS é base lógica; escala no DPR
+  const colors=['#000','#fda4af','#f9a8d4','#a78bfa','#93c5fd','#86efac','#fcd34d','#fbbf24'];
+  const shapes={ I:[[1,1,1,1]], J:[[1,0,0],[1,1,1]], L:[[0,0,1],[1,1,1]], O:[[1,1],[1,1]],
+                 S:[[0,1,1],[1,1,0]], Z:[[1,1,0],[0,1,1]], T:[[0,1,0],[1,1,1]] };
 
-  // constantes do jogo
-  const COLS = 10, ROWS = 20, CELL = 24;
-  const SHAPES = {
-    I:[[1,1,1,1]], J:[[1,0,0],[1,1,1]], L:[[0,0,1],[1,1,1]],
-    O:[[1,1],[1,1]], S:[[0,1,1],[1,1,0]], Z:[[1,1,0],[0,1,1]], T:[[0,1,0],[1,1,1]]
-  };
-  const COLORS = ['#000','#fda4af','#f9a8d4','#a78bfa','#93c5fd','#86efac','#fcd34d','#fbbf24'];
+  let board, piece, next, dropCounter, dropInterval, lastTs, score, level, lines, rafId=null;
+  let paused=false;
 
-  let DPR = Math.max(1, window.devicePixelRatio || 1);
-  let ctx, nctx, rafId=null, resizeObs;
+  const keys=Object.keys(shapes);
+  const rndPiece=()=>({ m: shapes[keys[(Math.random()*keys.length)|0]].map(r=>r.slice()), x:3, y:0, c: 1+((Math.random()*6)|0) });
 
-  // estado
-  let board, piece, next;
-  let score, level, lines;
-  let dropMs, lastTs, acc;
-
-  function cssPx(el){ return el.getBoundingClientRect ? el.getBoundingClientRect() : {width: el.clientWidth, height: el.clientHeight}; }
-
-  function setupCanvas(cnv, w, h){
-    // define tamanho visual
-    cnv.style.width  = w + 'px';
-    cnv.style.height = h + 'px';
-    // define buffer
-    cnv.width  = Math.round(w * DPR);
-    cnv.height = Math.round(h * DPR);
-    const c2d = cnv.getContext('2d');
-    c2d.setTransform(DPR, 0, 0, DPR, 0, 0);
-    return c2d;
+  function setupCanvas(el, w, h){
+    el.width = Math.floor(w * dpr);
+    el.height= Math.floor(h * dpr);
+    el.style.width = w + 'px';
+    el.style.height= h + 'px';
+    const c = el.getContext('2d');
+    c.setTransform(dpr,0,0,dpr,0,0);
+    return c;
   }
 
-  function sizeFromLayout(){
-    // tenta pegar a largura do contêiner pai; se falhar, usa largura fixa
-    const wrap = tCanvas.parentElement;
-    let w = (wrap ? cssPx(wrap).width : 0) | 0;
-    if (!w || w < COLS*CELL) w = COLS * CELL; // fallback
-    const h = ROWS * CELL;
-    return { w, h };
+  function reset(){
+    board = Array.from({length: ROWS},()=>Array(COLS).fill(0));
+    piece=null; next=rndPiece();
+    dropCounter=0; dropInterval=600; lastTs=0;
+    score=0; level=1; lines=0;
+    cfg?.onScore?.(score); cfg?.onLevel?.(level);
+    if (pctx) { pctx.clearRect(0,0,cfg.preview.width, cfg.preview.height); }
   }
 
-  function ensureContexts(){
-    // tira hidden (por conferência extra)
-    tCanvas.classList.remove('hidden');
-    nextCanvas.classList.remove('hidden');
-
-    const { w, h } = sizeFromLayout();
-    ctx  = setupCanvas(tCanvas,  w, h);
-    nctx = setupCanvas(nextCanvas, 96, 96);
-  }
-
-  function resetState(){
-    board = Array.from({length: ROWS}, () => Array(COLS).fill(0));
-    piece = null; next = rndPiece();
-
-    score = 0; level = 1; lines = 0;
-    dropMs = 700; lastTs = 0; acc = 0;
-
-    if (scoreEl) scoreEl.textContent = '0';
-    if (levelEl) levelEl.textContent = '1';
-  }
-
-  function rndPiece(){
-    const keys = Object.keys(SHAPES);
-    const k = keys[(Math.random()*keys.length)|0];
-    return { m: SHAPES[k].map(r=>r.slice()), x: 3, y: 0, c: 1+((Math.random()*6)|0) };
-  }
-
-  function drawHeart(c2d, x, y, color, size=CELL){
-    c2d.fillStyle = color;
-    const bx = x*size, by = y*size;
+  function drawHeartAt(c2d,x,y,c,bs){
+    const bx=x*bs, by=y*bs;
+    c2d.fillStyle=colors[c];
     c2d.beginPath();
-    c2d.moveTo(bx+size/2, by+size*0.75);
-    c2d.bezierCurveTo(bx+size*1.2, by+size*0.2, bx+size*0.8, by, bx+size/2, by+size*0.35);
-    c2d.bezierCurveTo(bx+size*0.2, by, bx-size*0.2, by+size*0.2, bx+size/2, by+size*0.75);
+    c2d.moveTo(bx+bs/2, by+bs*0.75);
+    c2d.bezierCurveTo(bx+bs*1.2, by+bs*0.2, bx+bs*0.8, by, bx+bs/2, by+bs*0.35);
+    c2d.bezierCurveTo(bx+bs*0.2, by, bx-bs*0.2, by+bs*0.2, bx+bs/2, by+bs*0.75);
     c2d.fill();
   }
 
   function drawNext(){
-    nctx.clearRect(0,0,nextCanvas.width, nextCanvas.height);
-    const m = next.m;
-    const cw = nextCanvas.clientWidth, ch = nextCanvas.clientHeight;
-    const px = Math.floor((cw - m[0].length*CELL/2)/2);
-    const py = Math.floor((ch - m.length*CELL/2)/2);
-    nctx.save(); nctx.translate(px,py);
-    for (let y=0;y<m.length;y++) for (let x=0;x<m[y].length;x++)
-      if (m[y][x]) drawHeart(nctx, x, y, COLORS[next.c], CELL/2);
-    nctx.restore();
+    const w=96, h=96;
+    pctx.clearRect(0,0,w,h);
+    const m=next.m, bs=BS/2;
+    const offx=(w - m[0].length*bs)/2, offy=(h - m.length*bs)/2;
+    pctx.save(); pctx.translate(offx,offy);
+    for(let y=0;y<m.length;y++) for(let x=0;x<m[y].length;x++)
+      if(m[y][x]) drawHeartAt(pctx,x,y,next.c,bs);
+    pctx.restore();
   }
 
-  function rotate(mat){
-    const N=mat.length, M=mat[0].length;
-    const r=Array.from({length:M},()=>Array(N).fill(0));
-    for (let y=0;y<N;y++) for (let x=0;x<M;x++) r[x][N-1-y]=mat[y][x];
-    return r;
-  }
-
-  function collide(px=piece.x, py=piece.y, pm=piece.m){
-    for (let y=0;y<pm.length;y++){
-      for (let x=0;x<pm[y].length;x++){
-        if (!pm[y][x]) continue;
-        const nx = px+x, ny = py+y;
-        if (nx<0 || nx>=COLS || ny>=ROWS) return true;
-        if (ny>=0 && board[ny][nx]) return true;
-      }
-    }
+  function rotate(m){ const N=m.length,M=m[0].length; const r=Array.from({length:M},()=>Array(N).fill(0)); for(let y=0;y<N;y++) for(let x=0;x<M;x++) r[x][N-1-y]=m[y][x]; return r; }
+  function collide(px=piece.x, py=piece.y, m=piece.m){
+    for(let y=0;y<m.length;y++) for(let x=0;x<m[y].length;x++)
+      if(m[y][x] && (board[y+py]?.[x+px] ?? 1)) return true;
     return false;
   }
-
-  function merge(){
-    for (let y=0;y<piece.m.length;y++)
-      for (let x=0;x<piece.m[y].length;x++)
-        if (piece.m[y][x]) board[piece.y+y][piece.x+x]=piece.c;
-  }
-
+  function merge(){ for(let y=0;y<piece.m.length;y++) for(let x=0;x<piece.m[y].length;x++) if(piece.m[y][x]) board[y+piece.y][x+piece.x]=piece.c; }
   function clearLines(){
     let cleared=0;
-    for (let y=ROWS-1;y>=0;y--){
-      if (board[y].every(Boolean)){
-        board.splice(y,1);
-        board.unshift(Array(COLS).fill(0));
-        y++; cleared++;
-      }
+    for(let y=ROWS-1;y>=0;y--){
+      if(board[y].every(v=>v)){ board.splice(y,1); board.unshift(Array(COLS).fill(0)); y++; cleared++; }
     }
-    if (cleared){
+    if(cleared){
       lines+=cleared; score+=cleared*100*level;
-      if (lines>=level*5){ level++; dropMs=Math.max(120, dropMs-60); }
-      if (scoreEl) scoreEl.textContent=String(score);
-      if (levelEl) levelEl.textContent=String(level);
+      if(lines>=level*5){ level++; dropInterval=Math.max(120, dropInterval-60); }
+      cfg?.onScore?.(score); cfg?.onLevel?.(level);
     }
   }
-
-  function spawn(){
-    piece = next || rndPiece();
-    next = rndPiece();
-    drawNext();
-    if (collide()){ // game over → recomeça
-      resetState();
-      spawn();
-    }
-  }
-
   function ghostY(){
     let y=piece.y;
-    while(!collide(piece.x, y+1)) y++;
-    return y;
+    while(true){ y++; if (collide(piece.x, y)) return y-1; }
   }
 
-  function render(){
-    const cw = tCanvas.clientWidth, ch = tCanvas.clientHeight;
-    ctx.clearRect(0,0,cw,ch);
+  function draw(){
+    const W=cfg.canvas.width/dpr, H=cfg.canvas.height/dpr;
+    ctx.clearRect(0,0,W,H);
     ctx.fillStyle='#fffafc';
-    ctx.fillRect(0,0,cw,ch);
-
-    // board
-    for (let y=0;y<ROWS;y++)
-      for (let x=0;x<COLS;x++)
-        if (board[y][x]) drawHeart(ctx, x, y, COLORS[board[y][x]]);
+    ctx.fillRect(0,0,W,H);
 
     // ghost
     const gy=ghostY();
-    for (let y=0;y<piece.m.length;y++)
-      for (let x=0;x<piece.m[y].length;x++)
-        if (piece.m[y][x]){ ctx.globalAlpha=.2; drawHeart(ctx, x+piece.x, y+gy, COLORS[piece.c]); ctx.globalAlpha=1; }
+    for(let y=0;y<piece.m.length;y++) for(let x=0;x<piece.m[y].length;x++)
+      if(piece.m[y][x]){ ctx.globalAlpha=.2; drawHeartAt(ctx, x+piece.x, y+gy, piece.c, BS); }
+    ctx.globalAlpha=1;
 
-    // peça
-    for (let y=0;y<piece.m.length;y++)
-      for (let x=0;x<piece.m[y].length;x++)
-        if (piece.m[y][x]) drawHeart(ctx, x+piece.x, y+piece.y, COLORS[piece.c]);
+    // board
+    for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++)
+      if(board[y][x]) drawHeartAt(ctx,x,y,board[y][x],BS);
+
+    // piece
+    for(let y=0;y<piece.m.length;y++) for(let x=0;x<piece.m[y].length;x++)
+      if(piece.m[y][x]) drawHeartAt(ctx,x+piece.x,y+piece.y,piece.c,BS);
   }
 
-  function step(ts){
-    if (!rafId) return;
-    const dt = ts - (lastTs || ts);
-    lastTs = ts; acc += dt;
-    if (acc >= dropMs){
-      acc = 0;
-      piece.y++;
-      if (collide()){
-        piece.y--;
-        merge(); clearLines(); spawn();
+  function update(ts=0){
+    const dt = ts - lastTs; lastTs = ts;
+    if (!paused){
+      dropCounter += dt;
+      if (dropCounter > dropInterval){
+        piece.y++;
+        if (collide()){
+          piece.y--;
+          merge();
+          clearLines();
+          newPiece();
+        }
+        dropCounter = 0;
       }
+      draw();
     }
-    render();
-    rafId = requestAnimationFrame(step);
+    rafId = requestAnimationFrame(update);
   }
 
-  function move(dx){
-    const nx = piece.x + dx;
-    if (!collide(nx, piece.y)) piece.x = nx;
-  }
-  function soft(){
-    if (!collide(piece.x, piece.y+1)){ piece.y++; acc=0; }
-    else { merge(); clearLines(); spawn(); acc=0; }
-  }
-  function hard(){
-    while(!collide(piece.x, piece.y+1)) piece.y++;
-    merge(); clearLines(); spawn(); acc=0;
-  }
-  function rot(){
-    const r = rotate(piece.m);
-    if (!collide(piece.x, piece.y, r)) piece.m = r;
-    else if (!collide(piece.x-1, piece.y, r)) { piece.x--; piece.m=r; }
-    else if (!collide(piece.x+1, piece.y, r)) { piece.x++; piece.m=r; }
+  function newPiece(){
+    piece = next || rndPiece();
+    next  = rndPiece();
+    drawNext();
+    if (collide()){
+      reset();
+      newPiece();
+    }
   }
 
-  function start(){
-    // 1) contextos
-    ensureContexts();
+  // Controles
+  function move(dx){ piece.x+=dx; if(collide()) piece.x-=dx; }
+  function soft(){ piece.y++; if(collide()){ piece.y--; merge(); clearLines(); newPiece(); dropCounter=0; } }
+  function hard(){ while(!collide()) piece.y++; piece.y--; merge(); clearLines(); newPiece(); dropCounter=0; }
+  function rot(){ const r=rotate(piece.m); const old=piece.m; piece.m=r; if(collide()) piece.m=old; }
 
-    // 2) estado
-    resetState();
-    spawn();
+  // API pública usada pela página
+  window.initTetris = function initTetris(options){
+    cfg = options || {};
+    if (!cfg.canvas || !cfg.preview) return;
 
-    // 3) ⚠️ Render imediato (iOS às vezes demora pro primeiro RAF)
-    render();
+    // preparar canvas com DPR
+    ctx  = setupCanvas(cfg.canvas,  COLS*BS, ROWS*BS);
+    pctx = setupCanvas(cfg.preview, 96, 96);
 
-    // 4) loop
-    if (!rafId){ lastTs=0; rafId = requestAnimationFrame(step); }
+    reset();
+    newPiece();
+    drawNext();
 
-    // 5) reconfigura em resize/orientation
-    try{
-      resizeObs?.disconnect();
-      resizeObs = new ResizeObserver(()=>{
-        DPR = Math.max(1, window.devicePixelRatio || 1);
-        ensureContexts();
-        render();
-      });
-      resizeObs.observe(tCanvas.parentElement || tCanvas);
-    }catch(_){}
-  }
-
-  function stop(){ if (rafId){ cancelAnimationFrame(rafId); rafId=null; } }
-
-  // Expor para games.js / botões
-  window.initTetris = start;
-  window.resetTetris = () => { stop(); start(); };
-  window.togglePauseTetris = () => {
-    if (rafId){ cancelAnimationFrame(rafId); rafId=null; }
-    else { lastTs=0; rafId=requestAnimationFrame(step); }
+    if (!rafId) requestAnimationFrame(update);
   };
-  window.ctrlTetris = (act)=>{
-    if (!rafId) return;
-    if (act==='left') move(-1);
-    if (act==='right') move(1);
-    if (act==='soft') soft();
-    if (act==='hard') hard();
-    if (act==='rotate') rot();
+
+  window.resetTetris = function(){
+    reset(); newPiece(); draw(); drawNext();
   };
+  window.togglePauseTetris = function(){ paused = !paused; };
+
+  // D-pad mobile em games.html chama isso
+  window.ctrlTetris = function(action){
+    if (!cfg) return;
+    if (action==='left') move(-1);
+    if (action==='right') move(1);
+    if (action==='soft') soft();
+    if (action==='hard') hard();
+    if (action==='rotate') rot();
+  };
+
+  // Teclado (desktop)
+  function onKey(e){
+    if (!ctx) return;
+    if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key)) e.preventDefault();
+    if(e.key==='ArrowLeft') move(-1);
+    if(e.key==='ArrowRight') move(1);
+    if(e.key==='ArrowDown') soft();
+    if(e.key===' ') hard();
+    if(e.key==='ArrowUp') rot();
+  }
+  window.addEventListener('keydown', onKey, {passive:false});
+
 })();
