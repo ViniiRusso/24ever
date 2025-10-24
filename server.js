@@ -1,5 +1,3 @@
-// server.js — COLE por cima do seu arquivo atual
-
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -17,17 +15,20 @@ const __dirname  = path.dirname(__filename);
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
+const isProd = process.env.NODE_ENV === 'production';
 
 app.set('trust proxy', 1);
 
-// Canonical HTTPS + www
-const CANON_HOST = 'www.24ever.com.br';
-app.use((req, res, next) => {
-  const host = req.headers.host || '';
-  if (!req.secure) return res.redirect(301, `https://${host}${req.originalUrl}`);
-  if (host !== CANON_HOST) return res.redirect(301, `https://${CANON_HOST}${req.originalUrl}`);
-  next();
-});
+// Canonical HTTPS + www somente em produção
+const CANON_HOST = process.env.CANON_HOST || 'www.24ever.com.br';
+if (isProd) {
+  app.use((req, res, next) => {
+    const host = req.headers.host || '';
+    if (!req.secure) return res.redirect(301, `https://${host}${req.originalUrl}`);
+    if (host !== CANON_HOST) return res.redirect(301, `https://${CANON_HOST}${req.originalUrl}`);
+    next();
+  });
+}
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.urlencoded({ extended: true }));
@@ -36,8 +37,6 @@ app.use(compression());
 
 // Sessão
 const SESSION_SECRET = process.env.SESSION_SECRET || 'please-change-this-secret';
-const isProd = process.env.NODE_ENV === 'production';
-
 app.use(session({
   name: 's24',
   secret: SESSION_SECRET,
@@ -137,8 +136,8 @@ app.get('/calendar',(_, res) => res.sendFile(path.join(__dirname, 'public', 'cal
 app.get('/notes',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'notes.html')));
 app.get('/links',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'links.html')));
 
-// DATA
-const DATA_DIR = process.env.DATA_DIR || '/opt/render/project/src/data';
+// DATA (JSON em disco)
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const EVENTS_FILE = path.join(DATA_DIR, 'events.json');
 const NOTES_FILE  = path.join(DATA_DIR, 'notes.json');
@@ -164,7 +163,6 @@ app.delete('/api/events/:id', (req, res) => {
 
 app.get('/api/notes', (_req, res) => res.json(readJSON(NOTES_FILE)));
 app.post('/api/notes', (req, res) => {
-  // aceita string vazia; só recusa undefined
   const { text } = req.body ?? {};
   if (text === undefined) return res.status(400).json({ error: 'missing text' });
   const notes = readJSON(NOTES_FILE);
@@ -192,14 +190,10 @@ app.post('/api/map/states', (req, res) => {
   visited ? set.add(id) : set.delete(id);
   const arr = [...set]; writeJSON(MAP_FILE, arr); res.json(arr);
 });
-// limpar tudo (RESET)
-app.post('/api/map/clear', (_req, res) => {
-  writeJSON(MAP_FILE, []);
-  res.json({ ok: true });
-});
+app.post('/api/map/clear', (_req, res) => { writeJSON(MAP_FILE, []); res.json({ ok: true }); });
 
 // 404 → home
 app.use((_, res) => res.redirect('/'));
 
 // start
-app.listen(PORT, () => console.log(`✅ 24ever em https://${CANON_HOST}`));
+app.listen(PORT, () => console.log(`✅ 24ever rodando em ${isProd ? `https://${CANON_HOST}` : `http://localhost:${PORT}`}`));
