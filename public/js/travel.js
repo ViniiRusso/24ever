@@ -1,6 +1,5 @@
 // BR + EUA clicável com persistência via /api/map/states.
-// Corrige: ids determinísticos (sem depender de properties.admin/country),
-// usa evento 'click' do Leaflet, aplica estilos fortes e re-aplica após fitBounds.
+// Corrige: usar 'click' (e fallback touchstart), IDs determinísticos, re-aplica estilos.
 
 (function(){
   const toastEl = document.getElementById('toast');
@@ -8,7 +7,6 @@
   const counter  = document.getElementById('visitedCount');
   const resetBtn = document.getElementById('btnReset');
 
-  // estilos muito contrastantes para não restar dúvida visual
   const styleN = { color:'#ec4899', weight:1,   fill:true, fillColor:'#fbcfe8', fillOpacity:.22, lineJoin:'round' };
   const styleV = { color:'#ec4899', weight:3,   fill:true, fillColor:'#ec4899', fillOpacity:.78, lineJoin:'round' };
 
@@ -22,7 +20,6 @@
     "Santa Catarina":"SC","São Paulo":"SP","Sergipe":"SE","Tocantins":"TO"
   };
 
-  // Mapa de nomes -> siglas dos EUA (50 + DC + PR)
   const US_CODE_BY_NAME = {
     "Alabama":"AL","Alaska":"AK","Arizona":"AZ","Arkansas":"AR","California":"CA","Colorado":"CO","Connecticut":"CT","Delaware":"DE",
     "District of Columbia":"DC","Florida":"FL","Georgia":"GA","Hawaii":"HI","Idaho":"ID","Illinois":"IL","Indiana":"IN","Iowa":"IA",
@@ -39,33 +36,41 @@
     if(!toastEl) return;
     toastEl.textContent = msg;
     toastEl.classList.remove('hidden');
-    setTimeout(()=>toastEl.classList.add('hidden'), 2000);
+    setTimeout(()=>toastEl.classList.add('hidden'), 1800);
   }
   function renderCount(){ if (counter) counter.textContent = String(visited.size); }
 
-  // Gera um ID estável por país + código de estado
   function stateIdFrom(country, feature){
     const p = feature?.properties || {};
     const name = p.name || p.state_name || p.state || '';
     const code = (p.state_code || p.code || p.postal || '').toString().toUpperCase();
 
     if (country === 'US') {
-      const us = code || US_CODE_BY_NAME[name] || US_CODE_BY_NAME[Object.keys(US_CODE_BY_NAME).find(k => normalize(k) === normalize(name))] || normalize(name).slice(0,2).toUpperCase();
+      const us = code
+        || US_CODE_BY_NAME[name]
+        || US_CODE_BY_NAME[Object.keys(US_CODE_BY_NAME).find(k => normalize(k) === normalize(name))]
+        || normalize(name).slice(0,2).toUpperCase();
       return `US-${us}`;
     }
     if (country === 'BR') {
-      const uf = BR_UF_BY_NAME[name] || BR_UF_BY_NAME[Object.keys(BR_UF_BY_NAME).find(k => normalize(k) === normalize(name))] || code || normalize(name).slice(0,2).toUpperCase();
+      const uf = BR_UF_BY_NAME[name]
+        || BR_UF_BY_NAME[Object.keys(BR_UF_BY_NAME).find(k => normalize(k) === normalize(name))]
+        || code || normalize(name).slice(0,2).toUpperCase();
       return `BR-${uf}`;
     }
-    // fallback (não esperado)
     return `XX-${normalize(name)}`;
   }
 
-  // Mapa base
+  // mapa base + pane para garantir clique acima dos tiles
   const map = L.map('map', { zoomControl:true, scrollWheelZoom:true, tap:true });
+  const statesPane = map.createPane('states');
+  statesPane.style.zIndex = 650;
+  statesPane.style.pointerEvents = 'auto';
+
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '&copy; OpenStreetMap'
   }).addTo(map);
+
   map.setView([10,-30], 3);
   setTimeout(()=>map.invalidateSize(), 150);
 
@@ -82,65 +87,75 @@
     return nowVisited;
   }
 
-  function makeOnEachFeature(country){
-    return function(feature, layer){
+  function wireFeature(country){
+    return (feature, layer)=>{
       const id   = stateIdFrom(country, feature);
       const name = feature?.properties?.name || feature?.properties?.state_name || 'Estado';
 
-      // reforça interatividade
       layer.options.interactive = true;
       layer.options.fill = true;
+      layer.options.pane = 'states';
 
       applyStyle(layer, id);
-      layer.bindTooltip(`${name}`, { sticky:true, direction:'auto' });
+      layer.bindTooltip(name, { sticky:true, direction:'auto' });
 
-      // clique (desktop e mobile)
-      layer.on('click', async ()=>{
+      const handle = async ()=>{
         const nowVisited = toggleVisit(id, layer);
         try{
-          await fetch('/api/map/states', {
+          const r = await fetch('/api/map/states', {
             method:'POST',
             headers:{'Content-Type':'application/json'},
             body: JSON.stringify({ id, visited: nowVisited })
           });
+          if (!r.ok) throw new Error('HTTP '+r.status);
         }catch(e){
           // reverte se falhar
           toggleVisit(id, layer);
           toast('Não consegui salvar agora. Tente novamente.');
+          console.error(e);
         }
-      });
+      };
 
-      // acessibilidade via teclado
+      // clique padrão + fallback touchstart (alguns iOS antigos)
+      layer.on('click', handle);
+      layer.on('touchstart', (ev)=>{ ev.originalEvent?.preventDefault?.(); handle(); });
+
+      // acessibilidade teclado
       layer.on('keypress', (ev)=>{
         const k = ev.originalEvent?.key;
-        if (k === 'Enter' || k === ' ') layer.fire('click');
+        if (k === 'Enter' || k === ' ') handle();
       });
     };
   }
 
+  let layerBR, layerUS;
+
   async function loadAll(){
     // 1) estados salvos
-    let saved = [];
-    try { saved = await fetch('/api/map/states', { cache:'no-store' }).then(r=>r.json()); } catch {}
-    saved.forEach(x=>visited.add(x));
+    visited.clear();
+    try {
+      const saved = await fetch('/api/map/states', { cache:'no-store' }).then(r=>r.json());
+      saved.forEach(x=>visited.add(x));
+    } catch {}
     renderCount();
 
-    // 2) geojson via backend (sem CORS)
+    // 2) geojson via backend
     const [gjBR, gjUS] = await Promise.all([
       fetch(BR_URL).then(r=>r.json()),
       fetch(US_URL).then(r=>r.json()),
     ]);
 
-    // limpa camadas antigas (se houver)
-    map.eachLayer(l => { if (l instanceof L.GeoJSON) map.removeLayer(l); });
+    // remove camadas antigas (se recarregar)
+    if (layerBR) map.removeLayer(layerBR);
+    if (layerUS) map.removeLayer(layerUS);
 
-    const layerBR = L.geoJSON(gjBR, { onEachFeature: makeOnEachFeature('BR') });
-    const layerUS = L.geoJSON(gjUS, { onEachFeature: makeOnEachFeature('US') });
+    layerBR = L.geoJSON(gjBR, { onEachFeature: wireFeature('BR'), pane:'states' });
+    layerUS = L.geoJSON(gjUS, { onEachFeature: wireFeature('US'), pane:'states' });
 
     const group = L.featureGroup([layerBR, layerUS]).addTo(map);
     map.fitBounds(group.getBounds(), { padding:[20,20] });
 
-    // garante que os já visitados apareçam “acesos” pós-fitBounds
+    // reaplica estilos pós-fitBounds
     layerBR.eachLayer(l => applyStyle(l, stateIdFrom('BR', l.feature)));
     layerUS.eachLayer(l => applyStyle(l, stateIdFrom('US', l.feature)));
   }
@@ -148,9 +163,9 @@
   resetBtn?.addEventListener('click', async ()=>{
     if (!visited.size) return;
     try{
-      await fetch('/api/map/clear', { method:'POST' });
-      visited.clear(); renderCount();
-      await loadAll(); // recarrega e reaplica estilos
+      const r = await fetch('/api/map/clear', { method:'POST' });
+      if (!r.ok) throw new Error();
+      await loadAll();
       toast('Contador resetado 👍');
     }catch{
       toast('Não deu pra resetar agora');
