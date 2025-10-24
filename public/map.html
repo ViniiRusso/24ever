@@ -11,25 +11,19 @@
   <link rel="stylesheet" href="/styles.css" />
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <!-- amCharts 5 (map) -->
+  <script src="https://cdn.amcharts.com/lib/5/index.js"></script>
+  <script src="https://cdn.amcharts.com/lib/5/map.js"></script>
+  <script src="https://cdn.amcharts.com/lib/5/geodata/worldLow.js"></script>
+  <!-- geodata de estados -->
+  <script src="https://cdn.amcharts.com/lib/5/geodata/usaLow.js"></script>
+  <script src="https://cdn.amcharts.com/lib/5/geodata/brazilLow.js"></script>
+
   <style>
-    /* Garante que o mapa receba clique e fique visível */
-    body { overscroll-behavior: contain; }
-    .nav { z-index: 1000; }
-    #map-wrap { background: var(--glass); border:1px solid rgba(0,0,0,.06); border-radius: 1rem; padding: .75rem; }
-    #map {
-      height: calc(100svh - 200px);
-      min-height: 420px;
-      border-radius: .75rem;
-      overflow: hidden;
-      position: relative;
-      z-index: 1;
-      touch-action: pan-x pan-y; /* evita conflitos no iOS */
-    }
-    .leaflet-container { background: rgba(255,255,255,.55); }
+    #map { height: calc(100svh - 200px); min-height: 440px; border-radius: 1rem; overflow: hidden; }
+    .map-wrap { background: var(--glass); border:1px solid rgba(255,255,255,.7); border-radius:1rem; padding:.75rem; }
     .legend-dot { display:inline-block; width:12px; height:12px; border-radius:999px; background:#ec4899; vertical-align:middle; margin-right:6px; }
-    .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(90px + env(safe-area-inset-bottom)); background:#111827; color:#fff; padding:.6rem .9rem; border-radius:.75rem; font-size:.9rem; z-index:3000; box-shadow:0 10px 24px rgba(0,0,0,.25); }
+    .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(90px + env(safe-area-inset-bottom)); background:#111827; color:#fff; padding:.6rem .9rem; border-radius:.75rem; font-size:.9rem; z-index:70; box-shadow:0 10px 24px rgba(0,0,0,.25); }
     .hidden{display:none}
   </style>
 </head>
@@ -73,19 +67,113 @@
       </div>
     </header>
 
-    <div id="map-wrap">
-      <div id="map" role="region" aria-label="Mapa por estados do Brasil e dos EUA"></div>
+    <div class="map-wrap">
+      <div id="map" role="region" aria-label="Mapa por estados"></div>
     </div>
   </main>
 
+  <div id="audioBar" class="bg-white/80 border-t p-2 fixed bottom-0 left-0 right-0 flex items-center gap-3">
+    <button id="playPause" class="px-3 py-1 rounded-lg bg-pink-500 text-white text-sm">Tocar</button>
+    <input id="volume" type="range" min="0" max="1" step="0.01" value="0.6" />
+    <span id="currentTrack" class="text-xs text-gray-600"></span>
+    <audio id="bgm" preload="auto"></audio>
+  </div>
+
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-  <!-- Leaflet -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-
-  <!-- Seus scripts -->
   <script src="/js/navbar.js"></script>
   <script src="/js/main.js"></script>
-  <script src="/js/travel.js"></script>
+  <script>
+  // ---- toast
+  const toastEl = document.getElementById('toast');
+  function toast(msg){ toastEl.textContent = msg; toastEl.classList.remove('hidden'); setTimeout(()=>toastEl.classList.add('hidden'), 2200); }
+
+  (async function(){
+    const visited = new Set();           // ids persistidos no server
+    const visitedCount = document.getElementById('visitedCount');
+
+    function renderCount(){ visitedCount.textContent = String(visited.size); }
+
+    // carrega visitados do backend
+    try{
+      const r = await fetch('/api/map/states', { cache:'no-store' });
+      if (r.ok) (await r.json()).forEach(id=>visited.add(id));
+    }catch(e){ /* segue sem persistido */ }
+    renderCount();
+
+    // cria o mapa
+    const root = am5.Root.new("map");
+    root._logo.dispose(); // sem logo
+
+    const chart = root.container.children.push(am5map.MapChart.new(root, {
+      projection: am5map.geoMercator(),
+      panX: "translateX", panY: "translateY",
+      wheelX: "none", wheelY: "zoom"
+    }));
+
+    // série USA
+    const usaSeries = chart.series.push(am5map.MapPolygonSeries.new(root, {
+      geoJSON: am5geodata_usaLow,     // estados dos EUA
+      valueField: "value"
+    }));
+
+    // série BR
+    const brSeries  = chart.series.push(am5map.MapPolygonSeries.new(root, {
+      geoJSON: am5geodata_brazilLow,  // estados do Brasil
+      valueField: "value"
+    }));
+
+    // estilo default
+    function setupSeries(series, ccPrefix){ // ccPrefix: "US" ou "BR"
+      series.mapPolygons.template.setAll({
+        tooltipText: "{name}",
+        interactive: true
+      });
+
+      series.mapPolygons.template.adapters.add("fill", (fill, target) => {
+        const data = target.dataItem?.dataContext || {};
+        const id = data.id || data.id_ || data.iso_3166_2 || data.iso || data.name;
+        const canonical = id && String(id).startsWith(ccPrefix) ? id : (ccPrefix + "-" + (data.id || data.state_code || data.name));
+        return visited.has(canonical) ? am5.color(0xec4899) : am5.color(0xfbcfe8);
+      });
+
+      series.mapPolygons.template.adapters.add("stroke", () => am5.color(0xec4899));
+      series.mapPolygons.template.setAll({ strokeOpacity: 1, strokeWidth: 1 });
+
+      series.mapPolygons.template.events.on("click", async (ev) => {
+        const data = ev.target.dataItem?.dataContext || {};
+        const idRaw = data.id || data.id_ || data.iso_3166_2 || data.iso || data.name;
+        const canonical = idRaw && String(idRaw).startsWith(ccPrefix) ? idRaw : (ccPrefix + "-" + (data.id || data.state_code || data.name));
+        const nowVisited = !visited.has(canonical);
+        if (nowVisited) visited.add(canonical); else visited.delete(canonical);
+        renderCount();
+        ev.target.states.applyAnimate("default"); // força re-eval do adapter de fill
+
+        try{
+          await fetch('/api/map/states', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ id: canonical, visited: nowVisited })
+          });
+        }catch(e){ toast('Não consegui salvar agora 😔'); }
+      });
+    }
+
+    setupSeries(usaSeries, "US");
+    setupSeries(brSeries,  "BR");
+
+    // ajusta a visão para caber BR + EUA
+    am5.ready(() => {
+      const bboxUSA = usaSeries.getPrivate("bounds");
+      const bboxBR  = brSeries.getPrivate("bounds");
+      const bounds = {
+        left:  Math.min(bboxUSA.left,  bboxBR.left),
+        right: Math.max(bboxUSA.right, bboxBR.right),
+        top:   Math.min(bboxUSA.top,   bboxBR.top),
+        bottom:Math.max(bboxUSA.bottom,bboxBR.bottom)
+      };
+      chart.zoomToGeoBounds(bounds, 1, true, 0);
+    });
+  })();
+  </script>
 </body>
 </html>
