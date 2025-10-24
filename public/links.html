@@ -10,9 +10,40 @@
 
   <link rel="stylesheet" href="/styles.css" />
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body{font-family:Poppins,system-ui,Arial}
+    .link-card{
+      background:rgba(255,255,255,0.6);
+      backdrop-filter:blur(12px);
+      border:1px solid rgba(255,255,255,0.8);
+      padding:1rem 1.25rem;
+      border-radius:1rem;
+      transition:all .25s ease;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+    }
+    .link-card:hover{
+      transform:translateY(-3px);
+      box-shadow:0 6px 18px rgba(0,0,0,0.1);
+      background:white;
+    }
+    .link-card a{
+      font-weight:600;
+      color:#ec4899;
+      text-decoration:none;
+      word-break:break-all;
+    }
+    .link-card a:hover{
+      text-decoration:underline;
+    }
+  </style>
 </head>
 <body class="pt-0 pb-24">
-  <!-- NAVBAR unificada -->
+  <!-- NAVBAR -->
   <nav class="nav fixed top-0 left-0 right-0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="/" class="brand">24ever</a>
@@ -40,15 +71,42 @@
     </div>
   </aside>
 
-  <main class="max-w-3xl mx-auto px-4 pt-24">
-    <h1 class="text-2xl font-bold mb-4">Links</h1>
-    <ul class="space-y-3">
-      <li><a class="text-pink-600 underline" href="#" target="_blank">Plano de estudos</a></li>
-      <li><a class="text-pink-600 underline" href="#" target="_blank">Documentos importantes</a></li>
-      <li><a class="text-pink-600 underline" href="#" target="_blank">Consultas / Agendamentos</a></li>
-    </ul>
-  </main>
+  <!-- MAIN -->
+  <main class="max-w-3xl mx-auto px-4 pt-24 space-y-4">
+    <h1 class="text-2xl font-extrabold mb-2">Links úteis 💻</h1>
 
+    <div class="space-y-3">
+      <div class="link-card">
+        <span>Login Univesp</span>
+        <a href="https://login.univesp.br/simplesaml/module.php/core/loginuserpass.php?AuthState=_07042f026ac1c15b1e38dce078f0e84597bda2ad1d%3Ahttps%3A%2F%2Flogin.univesp.br%2Fsimplesaml%2Fsaml2%2Fidp%2FSSOService.php%3Fspentityid%3Dhttps%253A%252F%252Fava.univesp.br%252Funivesp-simplesamlphp_sp%26cookieTime%3D1761282486" target="_blank">Abrir 🔗</a>
+      </div>
+
+      <div class="link-card">
+        <span>Drive — Respostas Univesp</span>
+        <a href="https://drive.google.com/drive/u/0/mobile/folders/1VcBCf84YRwislAhqIcwtr-4pw4LBDTcL?usp=drive_link&pli=1" target="_blank">Abrir 🔗</a>
+      </div>
+
+      <div class="link-card">
+        <span>Receita — Cinnamon Roll</span>
+        <a href="https://youtu.be/E218eEGe8D0?si=3rTclW9FDnze4631" target="_blank">Assistir 🍩</a>
+      </div>
+
+      <div class="link-card">
+        <span>Receita — Quiche</span>
+        <a href="https://vm.tiktok.com/ZMAb1NV3U/" target="_blank">Ver 🎥</a>
+      </div>
+
+      <div class="link-card">
+        <span>Receita — Torta de Limão</span>
+        <a href="https://vm.tiktok.com/ZMAb1Yefx/" target="_blank">Ver 🎥</a>
+      </div>
+
+      <div class="link-card">
+        <span>Site — Visto EUA</span>
+        <a href="https://ais.usvisa-info.com/pt-br/niv/schedule/70499781/continue_actions" target="_blank">Acessar 🇺🇸</a>
+      </div>
+    </div>
+  </main>
 
   <script src="/js/navbar.js"></script>
   <script src="/js/main.js"></script>

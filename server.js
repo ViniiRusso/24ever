@@ -73,8 +73,7 @@ app.use('/images', express.static(path.join(__dirname, 'public', 'images'), {
 // 2) rota dedicada para GEOJSON do mapa (garante /data/*.geojson público)
 app.use('/data', express.static(path.join(__dirname, 'public', 'data'), {
   setHeaders(res) {
-    // 7 dias está bom (dados mudam pouco)
-    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.setHeader('Cache-Control', 'public, max-age=604800'); // 7 dias
   },
   index: false,
 }));
@@ -180,11 +179,16 @@ app.delete('/api/events/:id', (req, res) => {
 
 app.get('/api/notes', (_req, res) => res.json(readJSON(NOTES_FILE)));
 app.post('/api/notes', (req, res) => {
+  // ✅ Aceita string vazia; só rejeita quando não vier string
   const { text } = req.body || {};
-  if (!text) return res.status(400).json({ error: 'missing text' });
+  if (typeof text !== 'string') {
+    return res.status(400).json({ error: 'missing text' });
+  }
   const notes = readJSON(NOTES_FILE);
-  const note = { id: crypto.randomUUID(), text, ts: Date.now() };
-  notes.unshift(note); writeJSON(NOTES_FILE, notes); res.json(note);
+  const note = { id: crypto.randomUUID(), text: text, ts: Date.now() };
+  notes.unshift(note);
+  writeJSON(NOTES_FILE, notes);
+  res.json(note);
 });
 app.patch('/api/notes/:id', (req, res) => {
   const notes = readJSON(NOTES_FILE);
