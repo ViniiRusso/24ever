@@ -3,205 +3,266 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="format-detection" content="telephone=no">
   <title>24ever — Our Map</title>
 
   <link rel="stylesheet" href="/styles.css" />
-  <script src="https://cdn.tailwindcss.com"></script>
-
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
   <style>
-    #map { height: calc(100svh - 200px); min-height: 420px; border-radius: 1rem; overflow: hidden; }
-    .map-wrap { background: var(--glass); border:1px solid rgba(255,255,255,.7); border-radius:1rem; padding: .75rem; }
-    .legend-dot { display:inline-block; width:12px; height:12px; border-radius:999px; background:#ec4899; vertical-align:middle; margin-right:6px; }
-    .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(90px + env(safe-area-inset-bottom)); background:#111827; color:#fff; padding:.6rem .9rem; border-radius:.75rem; font-size:.9rem; z-index:70; box-shadow:0 10px 24px rgba(0,0,0,.25); }
-    .hidden{display:none}
+    :root{
+      --glass: rgba(255,255,255,.6);
+      --accent:#ec4899;
+    }
+    /* página enxuta (sem navbar) */
+    body{
+      margin:0;
+      padding: clamp(12px, 2.5vw, 20px);
+      background: linear-gradient(120deg,#fce7ef,#fff,#dbeafe);
+      background-size: 300% 300%;
+      animation: grad 14s ease infinite;
+      font-family: Poppins, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      -webkit-font-smoothing: antialiased;
+      touch-action: manipulation;
+    }
+    @keyframes grad{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+
+    header{max-width: 1024px; margin: 0 auto 10px auto;}
+    h1{ margin:0 0 4px; font-weight:900; color:#0f172a; }
+    .sub{ color:#475569; font-size:.95rem; }
+    .legend-dot{ display:inline-block; width:12px; height:12px; border-radius:999px; background:#ec4899; vertical-align:middle; margin:0 6px 2px 10px; }
+
+    .wrap{ max-width:1024px; margin: 0 auto; }
+    .map-card{
+      background: var(--glass);
+      border:1px solid rgba(255,255,255,.7);
+      border-radius:1rem;
+      padding:.75rem;
+      box-shadow:0 10px 30px rgba(2,6,23,.06);
+    }
+    #map{
+      height: min(78vh, 820px);
+      min-height: 420px;
+      border-radius: 1rem;
+      overflow: hidden;
+      background: rgba(255,255,255,.55);
+      touch-action: pan-x pan-y;
+    }
+    .toolbar{
+      display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin:8px 0 12px;
+    }
+    .btn{
+      display:inline-flex; align-items:center; gap:.5rem;
+      background:var(--accent); color:#fff; border:0; border-radius:.9rem;
+      padding:.55rem .9rem; font-weight:600; cursor:pointer;
+      box-shadow:0 10px 24px rgba(236,72,153,.18);
+    }
+    .ghost{
+      background:rgba(236,72,153,.08); color:#be185d; border:1px solid rgba(236,72,153,.25);
+    }
+    .toast{ position:fixed; left:50%; transform:translateX(-50%); bottom:calc(18px + env(safe-area-inset-bottom)); background:#111827; color:#fff; padding:.6rem .9rem; border-radius:.75rem; font-size:.9rem; z-index:70; box-shadow:0 10px 24px rgba(0,0,0,.25); opacity:0; pointer-events:none; transition:opacity .18s ease; }
+    .toast.show{ opacity:1; }
+    .leaflet-tooltip{ font-weight:600; }
+    /* iOS: evita zoom acidental por duplo-tap em botões */
+    @supports (-webkit-touch-callout: none){
+      button { touch-action: manipulation; }
+    }
   </style>
 </head>
-<body class="pb-24">
-  <!-- NAVBAR -->
-  <nav class="nav fixed top-0 left-0 right-0 z-50">
-    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-      <a href="/" class="brand">24ever</a>
-      <button class="hamb" aria-label="Abrir menu" aria-expanded="false"><span></span><span></span><span></span></button>
-      <div class="links">
-        <a href="/">Home</a>
-        <a href="/games">Games</a>
-        <a href="/calendar">Calendar</a>
-        <a href="/map">Our Map</a>
-        <a href="/notes">Notes</a>
-        <a href="/links">Links</a>
-        <form action="/logout" method="post" class="logout"><button> sair </button></form>
-      </div>
+<body>
+  <header>
+    <h1>Our Map</h1>
+    <div class="sub">
+      Toque nos <b>estados</b> para marcar onde já fomos 💖
+      <span class="legend-dot"></span> Visitado • <span id="visitedCount">0</span> estados
     </div>
-  </nav>
-  <aside id="drawer" class="drawer">
-    <div class="drawer-inner">
-      <a href="/" class="drawer-link">Home</a>
-      <a href="/games" class="drawer-link">Games</a>
-      <a href="/calendar" class="drawer-link">Calendar</a>
-      <a href="/map" class="drawer-link">Our Map</a>
-      <a href="/notes" class="drawer-link">Notes</a>
-      <a href="/links" class="drawer-link">Links</a>
-      <form action="/logout" method="post"><button class="drawer-link">sair</button></form>
+    <div class="toolbar">
+      <button id="fitAll" class="btn">Enquadrar mapa</button>
+      <button id="clearSel" class="btn ghost">Limpar seleção</button>
     </div>
-  </aside>
+  </header>
 
-  <main class="max-w-6xl mx-auto px-4 pt-24">
-    <header class="flex items-end justify-between mb-4">
-      <div>
-        <h1 class="text-2xl font-extrabold">Our Map</h1>
-        <p class="text-sm text-gray-600 mt-1">Toque nos <b>estados</b> para marcar onde já fomos 💖</p>
-      </div>
-      <div class="text-sm text-gray-600">
-        <span class="legend-dot"></span> Visitado • <span id="visitedCount">0</span> estados
-      </div>
-    </header>
-
-    <div class="map-wrap">
-      <div id="map" role="region" aria-label="Mapa por estados"></div>
+  <div class="wrap">
+    <div class="map-card">
+      <div id="map" role="region" aria-label="Mapa por estados de Brasil e EUA"></div>
     </div>
-  </main>
-
-  <div id="audioBar" class="bg-white/80 border-t p-2 fixed bottom-0 left-0 right-0 flex items-center gap-3">
-    <button id="playPause" class="px-3 py-1 rounded-lg bg-pink-500 text-white text-sm">Tocar</button>
-    <input id="volume" type="range" min="0" max="1" step="0.01" value="0.6" />
-    <span id="currentTrack" class="text-xs text-gray-600"></span>
-    <audio id="bgm" preload="auto"></audio>
   </div>
 
-  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="/js/navbar.js"></script>
-  <script src="/js/main.js"></script>
   <script>
-    // ---- helpers UI
+    // --- UI helpers ---
     const toastEl = document.getElementById('toast');
-    function toast(msg){ toastEl.textContent = msg; toastEl.classList.remove('hidden'); setTimeout(()=>toastEl.classList.add('hidden'), 2600); }
+    function toast(msg){ toastEl.textContent = msg; toastEl.classList.add('show'); setTimeout(()=>toastEl.classList.remove('show'), 2200); }
+    const visitedCountEl = document.getElementById('visitedCount');
 
-    // ---- estado visitados
-    const visitedStateIds = new Set();
-    let map, layerBR, layerUS;
-    const visitedCount = document.getElementById('visitedCount');
-
+    // --- estado global ---
+    let map, layerBR, layerUS, groupAll;
+    const visitedIds = new Set(); // sempre a partir da API
     const styleNormal  = { color:'#ec4899', weight:1,   fillColor:'#fbcfe8', fillOpacity:.25 };
     const styleVisited = { color:'#ec4899', weight:1.2, fillColor:'#ec4899', fillOpacity:.6 };
 
-    async function loadVisited(){
-      try{
-        const r = await fetch('/api/map/states'); 
-        if (!r.ok) throw new Error('API error');
-        const arr = await r.json();
-        visitedStateIds.clear();
-        for (const id of arr) visitedStateIds.add(id);
-        renderCount();
-      }catch(e){
-        console.warn('Falha ao carregar estados visitados:', e);
-        toast('Não consegui carregar os estados salvos 😔');
-      }
-    }
-    function renderCount(){ visitedCount.textContent = String(visitedStateIds.size); }
-
-    // ID estável por feature (tenta várias propriedades comuns)
-    function stateIdFrom(feature){
-      const p = feature?.properties || {};
-      const code = (p.code || p.state_code || p.iso_3166_2 || '').toString();
-      const cc   = (p.country_code || p.country || p.admin || '').toString();
-      if (code && code.includes('-')) return code.toUpperCase();
-      if (cc && code) return `${cc.slice(0,2).toUpperCase()}-${code.slice(0,3).toUpperCase()}`;
-      const name = (p.name || p.state_name || '').normalize('NFD').replace(/\p{Diacritic}/gu,'').toUpperCase().replace(/\s+/g,'-').slice(0,3);
-      return `XX-${name}`;
-    }
-
-    // anti duplo-toque (iOS pode disparar 2x)
-    let lastTap = 0;
-    function onEach(feature, layerEl){
-      const id = stateIdFrom(feature);
-      const isVisited = visitedStateIds.has(id);
-      layerEl.setStyle(isVisited? styleVisited : styleNormal);
-
-      layerEl.on('click', async ()=>{
-        const now = Date.now();
-        if (now - lastTap < 400) return; // ignora toque duplicado
-        lastTap = now;
-
-        const before = visitedStateIds.has(id);
-        const nowVisited = !before;
-        if (nowVisited) visitedStateIds.add(id); else visitedStateIds.delete(id);
-        layerEl.setStyle(nowVisited? styleVisited : styleNormal);
-        if (before !== nowVisited) renderCount();
-
+    // salvar com debounce (evita inflar contador e salvar repetido)
+    let saveTimer = null;
+    function saveVisitedDebounced(id, visited){
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(async ()=>{
         try{
           await fetch('/api/map/states', {
             method:'POST',
             headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ id, visited: nowVisited })
+            body: JSON.stringify({ id, visited })
           });
-        }catch(e){
-          console.warn('Falha ao salvar estado visitado:', e);
-          toast('Não consegui salvar agora. Tenta de novo?');
-        }
-      });
+        }catch(e){ console.warn('Falha ao salvar estado visitado:', e); }
+      }, 180);
+    }
 
-      const name = feature?.properties?.name || feature?.properties?.state_name || 'Estado';
-      layerEl.bindTooltip(`${name}`,{sticky:true, direction:'auto'});
+    // id estável por país/estado (não depende de campo específico do GeoJSON)
+    function makeId(countryCode, rawName){
+      const norm = String(rawName||'')
+        .normalize('NFD').replace(/\p{Diacritic}/gu,'')
+        .toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+      return countryCode + ':' + norm;
+    }
+
+    function countRender(){ visitedCountEl.textContent = String(visitedIds.size); }
+
+    function onEachFactory(countryCode){
+      return function onEach(feature, layerEl){
+        const name = feature?.properties?.name || feature?.properties?.state_name || feature?.properties?.abbr || 'Estado';
+        const id = makeId(countryCode, name);
+
+        // pinta baseado no set vindo da API (não altera contador aqui!)
+        const isVisited = visitedIds.has(id);
+        layerEl.setStyle(isVisited ? styleVisited : styleNormal);
+
+        // tooltip
+        layerEl.bindTooltip(`${name}`, {sticky:true, direction:'auto'});
+
+        // click/touch: alternar e salvar
+        layerEl.on('click', ()=>{
+          const nowVisited = !visitedIds.has(id);
+          if (nowVisited) visitedIds.add(id); else visitedIds.delete(id);
+          layerEl.setStyle(nowVisited ? styleVisited : styleNormal);
+          countRender();
+          saveVisitedDebounced(id, nowVisited);
+        });
+      };
     }
 
     async function fetchJSONWithFallback(primary, fallbackLocal){
+      // tenta remoto
       try{
-        const r = await fetch(primary, { cache: 'no-store' });
-        if (!r.ok) throw new Error('primary fetch failed');
-        return await r.json();
+        const r = await fetch(primary, { cache:'no-store' });
+        if (r.ok) return await r.json();
+      }catch(_){}
+      // fallback local opcional
+      if (fallbackLocal){
+        try{
+          const r2 = await fetch(fallbackLocal, { cache:'no-store' });
+          if (r2.ok) { toast('Carreguei o mapa por fallback local 😉'); return await r2.json(); }
+        }catch(_){}
+      }
+      throw new Error('Falha ao obter GeoJSON');
+    }
+
+    async function loadVisitedFromAPI(){
+      try{
+        const r = await fetch('/api/map/states');
+        const arr = await r.json();
+        visitedIds.clear();
+        (arr||[]).forEach(id => visitedIds.add(String(id)));
+        countRender();
       }catch(e){
-        console.warn('GeoJSON primário falhou, tentando local:', e);
-        const r2 = await fetch(fallbackLocal, { cache: 'no-store' });
-        if (!r2.ok) throw new Error('fallback fetch failed');
-        toast('Carreguei usando o arquivo local do mapa 😉');
-        return await r2.json();
+        console.warn('Falha ao carregar estados salvos:', e);
+        toast('Não consegui carregar os estados salvos 😔');
       }
     }
 
-    async function loadBoth(){
-      // BR + US juntos
-      const [gjBR, gjUS] = await Promise.all([
-        fetchJSONWithFallback(URL_BR, FBR),
-        fetchJSONWithFallback(URL_US, FUS),
-      ]);
-
-      // Remove camadas antigas
-      if (layerBR) map.removeLayer(layerBR);
-      if (layerUS) map.removeLayer(layerUS);
-
-      layerBR = L.geoJSON(gjBR, { onEachFeature:onEach });
-      layerUS = L.geoJSON(gjUS, { onEachFeature:onEach });
-
-      const group = L.featureGroup([layerBR, layerUS]).addTo(map);
-      map.fitBounds(group.getBounds(), { padding:[20,20] });
-    }
-
     function initMap(){
-      map = L.map('map', { zoomControl:true, scrollWheelZoom:true });
+      map = L.map('map', {
+        zoomControl: true,
+        scrollWheelZoom: true,
+        doubleClickZoom: false, // iOS: evita zoom acidental
+      });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19, attribution: '&copy; OpenStreetMap'
       }).addTo(map);
-      map.setView([10,-30],2);
-      setTimeout(()=>{ map.invalidateSize(); }, 120);
+      map.setView([10,-30], 2);
+
+      // corrige tamanho após montar
+      setTimeout(()=> map.invalidateSize(), 120);
     }
 
-    // fontes GeoJSON (estados)
-    const URL_BR = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson';
-    const URL_US = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/united-states.geojson';
-    // Fallbacks locais (se quiser blindar)
-    const FBR = '/data/brazil-states.json';
-    const FUS = '/data/united-states.json';
+    async function loadBothCountries(){
+      const URL_BR = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson';
+      const URL_US = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/united-states.geojson';
+      // se quiser blindar, coloque também /data/brazil-states.json e /data/united-states.json
+      const [gjBR, gjUS] = await Promise.all([
+        fetchJSONWithFallback(URL_BR, '/data/brazil-states.json'),
+        fetchJSONWithFallback(URL_US, '/data/united-states.json')
+      ]);
 
+      // remove camadas antigas se existirem
+      if (layerBR) map.removeLayer(layerBR);
+      if (layerUS) map.removeLayer(layerUS);
+      if (groupAll) map.removeLayer(groupAll);
+
+      layerBR = L.geoJSON(gjBR, { onEachFeature: onEachFactory('BR') });
+      layerUS = L.geoJSON(gjUS, { onEachFeature: onEachFactory('US') });
+
+      groupAll = L.featureGroup([layerBR, layerUS]).addTo(map);
+      // adiciona BR e US dentro do grupo
+      layerBR.addTo(groupAll); layerUS.addTo(groupAll);
+
+      try{
+        map.fitBounds(groupAll.getBounds(), { padding:[20,20] });
+      }catch(_){}
+    }
+
+    document.getElementById('fitAll').addEventListener('click', ()=>{
+      try{ map.fitBounds(groupAll.getBounds(), { padding:[20,20] }); }catch(_){}
+    }, {passive:true});
+
+    document.getElementById('clearSel').addEventListener('click', async ()=>{
+      if (!visitedIds.size) return;
+      if (!confirm('Limpar todos os estados marcados?')) return;
+      // limpa local
+      visitedIds.clear();
+      countRender();
+      // repinta camadas
+      layerBR?.eachLayer(l => l.setStyle(styleNormal));
+      layerUS?.eachLayer(l => l.setStyle(styleNormal));
+      // não temos endpoint dedicado pra "limpar tudo", então só enviaremos
+      // deletes aos poucos quando o usuário tocar; para refletir no servidor,
+      // sobrescrevemos salvando cada id = false (rápido, mas com debounce por lote)
+      // aqui vamos enviar em pequenos lotes, sem bloquear UI:
+      const allIds = [];
+      layerBR?.eachLayer(l => {
+        const name = l.feature?.properties?.name || l.feature?.properties?.state_name;
+        allIds.push(makeId('BR',name));
+      });
+      layerUS?.eachLayer(l => {
+        const name = l.feature?.properties?.name || l.feature?.properties?.state_name;
+        allIds.push(makeId('US',name));
+      });
+      // envia somente os que estavam no servidor
+      const unique = Array.from(new Set(allIds));
+      // fire-and-forget, sem esperar:
+      unique.forEach(id => {
+        fetch('/api/map/states', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ id, visited:false })
+        }).catch(()=>{});
+      });
+      toast('Seleção limpa 👍');
+    }, {passive:true});
+
+    // --- boot ---
     (async function(){
       initMap();
-      await loadVisited();
-      await loadBoth(); // carrega os dois juntos logo de cara
+      await loadVisitedFromAPI();   // carrega set salvo (contador fica correto)
+      await loadBothCountries();    // BR + US juntos
     })();
   </script>
 </body>
