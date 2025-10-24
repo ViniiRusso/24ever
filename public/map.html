@@ -3,91 +3,78 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="format-detection" content="telephone=no">
   <title>24ever — Our Map</title>
-
-  <link rel="stylesheet" href="/styles.css" />
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/ios-hotfix.css" />
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
   <style>
-    #map { height: calc(100svh - 220px); min-height: 520px; border-radius: 1rem; overflow: hidden; }
-    .map-wrap { background: var(--glass); border:1px solid rgba(255,255,255,.7); border-radius:1rem; padding:.75rem; }
-    .legend-dot { display:inline-block; width:12px; height:12px; border-radius:999px; background:#ec4899; vertical-align:middle; margin-right:6px; }
-    .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(90px + env(safe-area-inset-bottom)); background:#111827; color:#fff; padding:.6rem .9rem; border-radius:.75rem; font-size:.9rem; z-index:70; box-shadow:0 10px 24px rgba(0,0,0,.25); }
-    .hidden{display:none}
-    .leaflet-interactive { cursor: pointer; }
-    /* garante clique no SVG em casos de CSS globais agressivos */
-    .leaflet-pane, .leaflet-overlay-pane svg, .leaflet-overlay-pane svg * { pointer-events: auto !important; }
+    body{font-family:Poppins,system-ui,Arial}
+    #map { height: 72vh; border-radius: 12px; }
+    .toast {
+      position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+      background: #111827; color: #fff; padding: .625rem .9rem; border-radius: 999px;
+      box-shadow: 0 10px 25px rgba(0,0,0,.25); pointer-events:none; transition: opacity .25s;
+    }
+    .toast.hidden{ opacity:0; }
   </style>
 </head>
 <body class="pb-24">
-  <!-- NAVBAR (igual às outras: brand + hambúrguer + drawer) -->
+  <!-- NAV -->
   <nav class="nav fixed top-0 left-0 right-0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="/" class="brand">24ever</a>
-      <button class="hamb" aria-label="Abrir menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <button class="hamb" aria-label="Abrir menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
       <div class="links">
         <a href="/">Home</a>
         <a href="/games">Games</a>
         <a href="/calendar">Calendar</a>
-        <a href="/map" aria-current="page">Our Map</a>
+        <a href="/map" class="active">Our Map</a>
         <a href="/notes">Notes</a>
         <a href="/links">Links</a>
         <form action="/logout" method="post" class="logout"><button> sair </button></form>
       </div>
     </div>
   </nav>
-  <aside id="drawer" class="drawer" aria-hidden="true">
+
+  <!-- Drawer -->
+  <aside id="drawer" class="drawer">
     <div class="drawer-inner">
       <a href="/" class="drawer-link">Home</a>
       <a href="/games" class="drawer-link">Games</a>
       <a href="/calendar" class="drawer-link">Calendar</a>
-      <a href="/map" class="drawer-link" aria-current="page">Our Map</a>
+      <a href="/map" class="drawer-link">Our Map</a>
       <a href="/notes" class="drawer-link">Notes</a>
       <a href="/links" class="drawer-link">Links</a>
       <form action="/logout" method="post"><button class="drawer-link">sair</button></form>
     </div>
   </aside>
 
-  <main class="max-w-6xl mx-auto px-4 pt-24">
-    <header class="flex items-end justify-between mb-4">
-      <div>
-        <h1 class="text-2xl font-extrabold">Our Map</h1>
-        <p class="text-sm text-gray-600 mt-1">Toque nos <b>estados</b> para marcar onde já fomos 💖</p>
-      </div>
-      <div class="text-sm text-gray-600">
-        <span class="legend-dot"></span> Visitado • <span id="visitedCount">0</span> estados
-      </div>
+  <main class="pt-20 max-w-6xl mx-auto px-4">
+    <header class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 mb-4">
+      <h1 class="text-2xl font-bold">Our Map</h1>
+      <p class="text-gray-600">Clique nos estados do <b>Brasil</b> e dos <b>EUA</b> para marcar visitados.</p>
     </header>
 
-    <div class="toolbar flex flex-wrap gap-2 mb-4">
-      <button id="btnReset" class="px-3 py-2 rounded-xl bg-pink-100 text-pink-700">Resetar contador</button>
+    <div class="flex items-center gap-4 mb-3">
+      <div class="text-sm text-gray-700">Visitados: <b id="visitedCount">0</b></div>
+      <button id="btnReset" class="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm">Resetar</button>
     </div>
 
-    <div class="map-wrap">
-      <div id="map" role="region" aria-label="Mapa por estados do Brasil e EUA"></div>
-    </div>
+    <div id="map" class="w-full"></div>
   </main>
 
-  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <div id="toast" class="toast hidden"></div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <!-- se suas outras páginas já usam /main.js para o hambúrguer, ele cuida do drawer -->
-  <script src="/main.js"></script>
-  <!-- fallback leve pro hambúrguer caso /main.js não exista ou não inicialize -->
-  <script>
-    (function(){
-      const btn = document.querySelector('.hamb');
-      const drawer = document.getElementById('drawer');
-      if (!btn || !drawer) return;
-      const open = ()=>{ drawer.classList.add('open'); drawer.setAttribute('aria-hidden','false'); btn.setAttribute('aria-expanded','true'); };
-      const close= ()=>{ drawer.classList.remove('open'); drawer.setAttribute('aria-hidden','true');  btn.setAttribute('aria-expanded','false'); };
-      btn.addEventListener('click', ()=> drawer.classList.contains('open') ? close() : open(), {passive:true});
-    })();
-  </script>
+  <script src="/js/navbar.js"></script>
   <script src="/js/travel.js"></script>
 </body>
 </html>
