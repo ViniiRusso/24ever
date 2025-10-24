@@ -1,33 +1,43 @@
-// game-2048.js — expõe window.init2048 / window.reset2048 / window.move2048
-(function(){
-  let ctx, canvas, scoreEl, size = 4;
-  let board, score, rafId = null;
-  let touch = {x:0,y:0,active:false};
+// game-2048.js — API global: window.Game2048
 
-  function cell() { return canvas.width / size; }
+window.Game2048 = (function(){
+  const canvas = document.getElementById('game2048');
+  if (!canvas) return { start(){}, stop(){}, isRunning(){ return false; }, swipe(){} };
 
-  function draw(){
-    const c = cell();
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const size = 4; 
+  const scoreEl = document.getElementById('score2048');
+
+  const face = { 2:'💗', 4:'💖', 8:'💞', 16:'💕', 32:'🫶', 64:'🌸', 128:'🌷', 256:'🎀', 512:'✨', 1024:'🌟', 2048:'💌' };
+  const colors = { 0:'#fdf2f8', 2:'#ffe4e6', 4:'#fecdd3', 8:'#fda4af', 16:'#fb7185', 32:'#f472b6', 64:'#ec4899', 128:'#d946ef', 256:'#a78bfa', 512:'#818cf8', 1024:'#60a5fa', 2048:'#34d399' };
+
+  let board, score, rafId=null, keyHandler;
+
+  function cellSize(){ return (canvas.width / (window.devicePixelRatio || 1)) / size; }
+
+  function draw() {
+    const cell = cellSize();
+    const pad = 6;
     ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.save();
+    ctx.scale((window.devicePixelRatio||1), (window.devicePixelRatio||1));
     ctx.textAlign='center'; ctx.textBaseline='middle';
-    const colors = { 0:'#fdf2f8', 2:'#ffe4e6', 4:'#fecdd3', 8:'#fda4af', 16:'#fb7185', 32:'#f472b6', 64:'#ec4899', 128:'#d946ef', 256:'#a78bfa', 512:'#818cf8', 1024:'#60a5fa', 2048:'#34d399' };
-    const face   = { 2:'💗', 4:'💖', 8:'💞', 16:'💕', 32:'🫶', 64:'🌸', 128:'🌷', 256:'🎀', 512:'✨', 1024:'🌟', 2048:'💌' };
 
-    for (let r=0;r<size;r++) for (let c0=0;c0<size;c0++){
-      const v = board[r][c0];
-      const x = c0*c+6, y=r*c+6, w=c-12, h=c-12;
+    for (let r=0;r<size;r++) for (let c=0;c<size;c++){
+      const v = board[r][c];
+      const x = c*cell+pad, y=r*cell+pad, w=cell-2*pad, h=cell-2*pad;
       ctx.fillStyle = colors[v] || '#86efac';
       ctx.fillRect(x,y,w,h);
-      if (v){
-        ctx.font = (c>=90? 'bold 30px Poppins':'bold 22px Poppins');
+      if (v) {
         ctx.fillStyle = '#3730a3';
+        ctx.font = `bold ${Math.max(18, Math.floor(cell*0.33))}px Poppins, Arial`;
         ctx.fillText(face[v] || '💝', x+w/2, y+h/2);
       }
     }
+    ctx.restore();
   }
-  function loop(){ draw(); rafId = requestAnimationFrame(loop); }
 
-  function addTile(){
+  function addTile() {
     const empty=[];
     for (let r=0;r<size;r++) for (let c=0;c<size;c++) if(!board[r][c]) empty.push([r,c]);
     if(!empty.length) return false;
@@ -54,9 +64,11 @@
     if (rotated && dir==='up') board=rotR(board);
     if (rotated && dir==='down') board=rotL(board);
 
-    if (prev!==JSON.stringify(board)) { addTile(); scoreEl.textContent = String(score); }
+    if (prev!==JSON.stringify(board)) { addTile(); scoreEl.textContent=score; }
     draw();
   }
+
+  function loop(){ draw(); rafId=requestAnimationFrame(loop); }
 
   function onKey(e){
     if (!rafId) return;
@@ -67,57 +79,21 @@
     if (e.key==='ArrowDown') operate('down');
   }
 
-  function onTouchStart(e){
-    const t = e.touches?.[0]; if (!t) return;
-    touch.active = true; touch.x = t.clientX; touch.y = t.clientY;
-  }
-  function onTouchEnd(e){
-    if (!touch.active) return; touch.active=false;
-    const t = e.changedTouches?.[0]; if (!t) return;
-    const dx = t.clientX - touch.x, dy = t.clientY - touch.y;
-    if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
-    if (Math.abs(dx) > Math.abs(dy)) operate(dx>0?'right':'left'); else operate(dy>0?'down':'up');
-  }
-
-  function resizeToParent(){
-    const wrap = canvas.parentElement;
-    const s = Math.min(wrap.clientWidth || 360, 420);
-    canvas.width = canvas.height = Math.max(240, s);
-  }
-
-  function start(cnv, onScore){
-    canvas = cnv;
-    scoreEl = document.getElementById('score2048');
-    ctx = canvas.getContext('2d');
-
-    resizeToParent();
-    window.addEventListener('resize', resizeToParent);
-
+  function start(){
     board = Array.from({length:size},()=>Array(size).fill(0));
-    score = 0; if (scoreEl) scoreEl.textContent='0';
+    score = 0; scoreEl.textContent='0';
     addTile(); addTile();
     if (!rafId) loop();
-
-    window.addEventListener('keydown', onKey);
-    canvas.addEventListener('touchstart', onTouchStart, {passive:true});
-    canvas.addEventListener('touchend', onTouchEnd, {passive:false});
-
-    // callback de score (mantém compatibilidade, se quiser usar)
-    if (typeof onScore === 'function') onScore(score);
+    keyHandler = onKey; window.addEventListener('keydown', keyHandler);
   }
 
-  function reset(){
-    if (!canvas) return;
-    board = Array.from({length:size},()=>Array(size).fill(0));
-    score = 0; if (scoreEl) scoreEl.textContent='0';
-    addTile(); addTile();
-    draw();
+  function stop(){
+    if (rafId){ cancelAnimationFrame(rafId); rafId=null; }
+    window.removeEventListener('keydown', keyHandler);
   }
 
-  function move(dir){ operate(dir); }
+  function swipe(dir){ if (rafId) operate(dir); }
+  function isRunning(){ return !!rafId; }
 
-  // assinatura esperada pelo seu games.js
-  window.init2048  = start;
-  window.reset2048 = reset;
-  window.move2048  = move;
+  return { start, stop, isRunning, swipe };
 })();
