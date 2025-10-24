@@ -1,3 +1,4 @@
+// server.js — login primeiro; sessão atrás de proxy (Render/Cloudflare); assets públicos
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -15,28 +16,33 @@ const __dirname  = path.dirname(__filename);
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
-const isProd = process.env.NODE_ENV === 'production';
 
-app.set('trust proxy', 1);
+app.set('trust proxy', 1); // Render/Cloudflare
 
-// Canonical só em produção
-const CANON_HOST = process.env.CANON_HOST || 'www.24ever.com.br';
-if (isProd) {
-  app.use((req, res, next) => {
-    const host = req.headers.host || '';
-    if (!req.secure) return res.redirect(301, `https://${host}${req.originalUrl}`);
-    if (host !== CANON_HOST) return res.redirect(301, `https://${CANON_HOST}${req.originalUrl}`);
-    next();
-  });
-}
+// ── Canonical: força HTTPS e WWW no domínio final
+const CANON_HOST = 'www.24ever.com.br';
+app.use((req, res, next) => {
+  const host = req.headers.host || '';
+  // força https
+  if (!req.secure) {
+    return res.redirect(301, `https://${host}${req.originalUrl}`);
+  }
+  // força www
+  if (host !== CANON_HOST) {
+    return res.redirect(301, `https://${CANON_HOST}${req.originalUrl}`);
+  }
+  next();
+});
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(compression());
 
-// Sessão
+// ── Sessão
 const SESSION_SECRET = process.env.SESSION_SECRET || 'please-change-this-secret';
+const isProd = process.env.NODE_ENV === 'production';
+
 app.use(session({
   name: 's24',
   secret: SESSION_SECRET,
@@ -45,15 +51,16 @@ app.use(session({
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: isProd,
-    domain: isProd ? '.24ever.com.br' : undefined,
-    maxAge: 1000 * 60 * 60 * 24 * 7,
+    secure: isProd,                          // precisa https
+    domain: isProd ? '.24ever.com.br' : undefined, // cookie para root e www
+    maxAge: 1000 * 60 * 60 * 24 * 7,         // 7 dias
   }
 }));
 
-// Assets públicos
+// ── Assets públicos ANTES do login
 const ASSET_EXT = /\.(css|js|mjs|png|jpg|jpeg|webp|gif|svg|ico|woff2?|map)$/i;
 
+// 1) rota dedicada para IMAGENS (garante /images/** sempre público, cache forte)
 app.use('/images', express.static(path.join(__dirname, 'public', 'images'), {
   setHeaders(res, filePath) {
     if (/\.(?:jpg|jpeg|png|webp|gif|svg)$/i.test(filePath)) {
@@ -63,6 +70,16 @@ app.use('/images', express.static(path.join(__dirname, 'public', 'images'), {
   index: false,
 }));
 
+// 2) rota dedicada para DATA (GeoJSON locais do mapa)
+app.use('/data', express.static(path.join(__dirname, 'public', 'data'), {
+  setHeaders(res) {
+    // 7 dias de cache tá bom (pode aumentar se quiser)
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+  },
+  index: false,
+}));
+
+// 3) demais assets públicos por extensão (css/js/woff etc) com cache forte
 app.use((req, res, next) => {
   if (ASSET_EXT.test(req.path)) {
     return express.static(path.join(__dirname, 'public'), {
@@ -77,15 +94,15 @@ app.use((req, res, next) => {
   next();
 });
 
-// evita cache de HTML
+// (opcional) desabilita cache para HTML (evita colar telas antigas)
 app.use((req, res, next) => {
-  if (req.method === 'GET' && (req.headers.accept || '').includes('text/html')) {
+  if (req.method === 'GET' && req.headers.accept && req.headers.accept.includes('text/html')) {
     res.setHeader('Cache-Control', 'no-store');
   }
   next();
 });
 
-// Login público
+// ── Login (público)
 app.get('/login', (req, res) => {
   if (req.session.userId) return res.redirect('/');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -118,17 +135,17 @@ app.post('/logout', (req, res) => {
   });
 });
 
-// Proteção
+// ── Protege o restante
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.redirect('/login');
   next();
 }
 app.use(requireAuth);
 
-// Estáticos pós-login
+// ── Estáticos (depois de logado)
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
-// Páginas
+// ── Páginas
 app.get('/',        (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/games',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'games.html')));
 app.get('/map',     (_, res) => res.sendFile(path.join(__dirname, 'public', 'map.html')));
@@ -136,21 +153,18 @@ app.get('/calendar',(_, res) => res.sendFile(path.join(__dirname, 'public', 'cal
 app.get('/notes',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'notes.html')));
 app.get('/links',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'links.html')));
 
-// DATA (JSON em disco)
-const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, 'data');
+// ── DATA (persistência em arquivo; aponta para volume se existir)
+const DATA_DIR = process.env.DATA_DIR || '/opt/render/project/src/data';
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-const EVENTS_FILE= path.join(DATA_DIR, 'events.json');
-const NOTES_FILE = path.join(DATA_DIR, 'notes.json');
-const MAP_FILE   = path.join(DATA_DIR, 'map.json');
-const GJ_BR_FILE = path.join(DATA_DIR, 'brazil-states.geojson');
-const GJ_US_FILE = path.join(DATA_DIR, 'united-states.geojson');
-
+const EVENTS_FILE = path.join(DATA_DIR, 'events.json');
+const NOTES_FILE  = path.join(DATA_DIR, 'notes.json');
+const MAP_FILE    = path.join(DATA_DIR, 'map.json');
 for (const f of [EVENTS_FILE, NOTES_FILE, MAP_FILE]) if (!fs.existsSync(f)) fs.writeFileSync(f, '[]');
 
 const readJSON  = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return []; } };
 const writeJSON = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2));
 
-// --- APIs base ---
+// ── APIs
 app.get('/api/events', (_req, res) => res.json(readJSON(EVENTS_FILE)));
 app.post('/api/events', (req, res) => {
   const { id, title, start, end, allDay } = req.body || {};
@@ -166,18 +180,18 @@ app.delete('/api/events/:id', (req, res) => {
 
 app.get('/api/notes', (_req, res) => res.json(readJSON(NOTES_FILE)));
 app.post('/api/notes', (req, res) => {
-  const { text } = req.body ?? {};
-  if (text === undefined) return res.status(400).json({ error: 'missing text' });
+  const { text } = req.body || {};
+  if (!text) return res.status(400).json({ error: 'missing text' });
   const notes = readJSON(NOTES_FILE);
-  const note = { id: crypto.randomUUID(), text: String(text), ts: Date.now() };
+  const note = { id: crypto.randomUUID(), text, ts: Date.now() };
   notes.unshift(note); writeJSON(NOTES_FILE, notes); res.json(note);
 });
 app.patch('/api/notes/:id', (req, res) => {
   const notes = readJSON(NOTES_FILE);
   const i = notes.findIndex(n => n.id === req.params.id);
   if (i === -1) return res.status(404).json({ error: 'not found' });
-  if (req.body.text !== undefined) notes[i].text = String(req.body.text);
-  notes[i].ts = Date.now();
+  notes[i].text = req.body.text ?? notes[i].text;
+  notes[i].ts   = Date.now();
   writeJSON(NOTES_FILE, notes); res.json(notes[i]);
 });
 app.delete('/api/notes/:id', (req, res) => {
@@ -185,7 +199,6 @@ app.delete('/api/notes/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// --- APIs do Map (persistência) ---
 app.get('/api/map/states', (_req, res) => res.json(readJSON(MAP_FILE)));
 app.post('/api/map/states', (req, res) => {
   const { id, visited } = req.body || {};
@@ -194,47 +207,9 @@ app.post('/api/map/states', (req, res) => {
   visited ? set.add(id) : set.delete(id);
   const arr = [...set]; writeJSON(MAP_FILE, arr); res.json(arr);
 });
-app.post('/api/map/clear', (_req, res) => { writeJSON(MAP_FILE, []); res.json({ ok: true }); });
 
-// --- GeoJSON proxy com cache em disco (evita CORS/instabilidade) ---
-async function cachedFetchGeo(url, filePath){
-  // se já existe em disco, serve do cache
-  if (fs.existsSync(filePath)) {
-    try {
-      const data = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(data);
-    } catch {}
-  }
-  // baixa (Node 18+ tem fetch nativo)
-  const r = await fetch(url, { cache: 'no-store' });
-  if (!r.ok) throw new Error(`Falha ao baixar ${url}`);
-  const gj = await r.json();
-  fs.writeFileSync(filePath, JSON.stringify(gj));
-  return gj;
-}
-
-app.get('/api/geo/brazil', async (_req, res) => {
-  try {
-    const url = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson';
-    const gj  = await cachedFetchGeo(url, GJ_BR_FILE);
-    res.json(gj);
-  } catch (e) {
-    res.status(500).json({ error: 'brazil geojson fetch failed' });
-  }
-});
-
-app.get('/api/geo/us', async (_req, res) => {
-  try {
-    const url = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/united-states.geojson';
-    const gj  = await cachedFetchGeo(url, GJ_US_FILE);
-    res.json(gj);
-  } catch (e) {
-    res.status(500).json({ error: 'us geojson fetch failed' });
-  }
-});
-
-// 404 → home
+// 404 → home (protegida)
 app.use((_, res) => res.redirect('/'));
 
 // start
-app.listen(PORT, () => console.log(`✅ 24ever rodando em ${isProd ? `https://${CANON_HOST}` : `http://localhost:${PORT}`}`));
+app.listen(PORT, () => console.log(`✅ 24ever em https://${CANON_HOST}`));
