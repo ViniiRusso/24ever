@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="format-detection" content="telephone=no">
   <title>24ever — Our Map</title>
 
   <link rel="stylesheet" href="/styles.css" />
@@ -15,25 +18,39 @@
     .legend-dot { display:inline-block; width:12px; height:12px; border-radius:999px; background:#ec4899; vertical-align:middle; margin-right:6px; }
     .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(90px + env(safe-area-inset-bottom)); background:#111827; color:#fff; padding:.6rem .9rem; border-radius:.75rem; font-size:.9rem; z-index:70; box-shadow:0 10px 24px rgba(0,0,0,.25); }
     .hidden{display:none}
-    .leaflet-interactive { cursor: pointer; } /* garante cursor clicável nos estados */
+    .leaflet-interactive { cursor: pointer; }
+    /* garante clique no SVG em casos de CSS globais agressivos */
+    .leaflet-pane, .leaflet-overlay-pane svg, .leaflet-overlay-pane svg * { pointer-events: auto !important; }
   </style>
 </head>
 <body class="pb-24">
-  <nav class="fixed top-0 left-0 right-0 nav-blur bg-white/70 border-b z-50">
+  <!-- NAVBAR (igual às outras: brand + hambúrguer + drawer) -->
+  <nav class="nav fixed top-0 left-0 right-0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-      <a href="/" class="font-extrabold text-pink-600 tracking-tight">24ever</a>
-      <div class="flex gap-4 text-sm">
-        <a href="/" class="hover:text-pink-600">Home</a>
-        <a href="/games" class="hover:text-pink-600">Games</a>
-        <a href="/calendar" class="hover:text-pink-600">Calendar</a>
-        <a href="/map" class="text-pink-600 font-semibold">Our Map</a>
-        <a href="/links" class="hover:text-pink-600">Links</a>
+      <a href="/" class="brand">24ever</a>
+      <button class="hamb" aria-label="Abrir menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <div class="links">
+        <a href="/">Home</a>
+        <a href="/games">Games</a>
+        <a href="/calendar">Calendar</a>
+        <a href="/map" aria-current="page">Our Map</a>
+        <a href="/notes">Notes</a>
+        <a href="/links">Links</a>
+        <form action="/logout" method="post" class="logout"><button> sair </button></form>
       </div>
-      <form action="/logout" method="post">
-        <button class="text-xs text-gray-500 hover:text-gray-700">sair</button>
-      </form>
     </div>
   </nav>
+  <aside id="drawer" class="drawer" aria-hidden="true">
+    <div class="drawer-inner">
+      <a href="/" class="drawer-link">Home</a>
+      <a href="/games" class="drawer-link">Games</a>
+      <a href="/calendar" class="drawer-link">Calendar</a>
+      <a href="/map" class="drawer-link" aria-current="page">Our Map</a>
+      <a href="/notes" class="drawer-link">Notes</a>
+      <a href="/links" class="drawer-link">Links</a>
+      <form action="/logout" method="post"><button class="drawer-link">sair</button></form>
+    </div>
+  </aside>
 
   <main class="max-w-6xl mx-auto px-4 pt-24">
     <header class="flex items-end justify-between mb-4">
@@ -58,6 +75,19 @@
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <!-- se suas outras páginas já usam /main.js para o hambúrguer, ele cuida do drawer -->
+  <script src="/main.js"></script>
+  <!-- fallback leve pro hambúrguer caso /main.js não exista ou não inicialize -->
+  <script>
+    (function(){
+      const btn = document.querySelector('.hamb');
+      const drawer = document.getElementById('drawer');
+      if (!btn || !drawer) return;
+      const open = ()=>{ drawer.classList.add('open'); drawer.setAttribute('aria-hidden','false'); btn.setAttribute('aria-expanded','true'); };
+      const close= ()=>{ drawer.classList.remove('open'); drawer.setAttribute('aria-hidden','true');  btn.setAttribute('aria-expanded','false'); };
+      btn.addEventListener('click', ()=> drawer.classList.contains('open') ? close() : open(), {passive:true});
+    })();
+  </script>
   <script src="/js/travel.js"></script>
 </body>
 </html>

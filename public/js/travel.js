@@ -1,4 +1,5 @@
-// public/js/travel.js — FIX: seleção VISÍVEL (borda grossa, fill forte, bringToFront) + persistência
+// BR + EUA clicável de verdade: pointerdown (toque/mouse), highlight forte, bringToFront e persistência.
+// Usa GeoJSON do backend (/api/geo/*) para evitar CORS. Salva em /api/map/states.
 
 (function(){
   const toastEl = document.getElementById('toast');
@@ -6,15 +7,12 @@
   const counter  = document.getElementById('visitedCount');
   const resetBtn = document.getElementById('btnReset');
 
-  // estilos bem contrastantes
-  const styleN = { color:'#ec4899', weight:1,   fill:true, fillColor:'#fbcfe8', fillOpacity:.22 };
-  const styleV = { color:'#ec4899', weight:3,   fill:true, fillColor:'#ec4899', fillOpacity:.75 };
+  // estilos muito contrastantes para não restar dúvida visual
+  const styleN = { color:'#ec4899', weight:1,   fill:true, fillColor:'#fbcfe8', fillOpacity:.22, lineJoin:'round' };
+  const styleV = { color:'#ec4899', weight:3,   fill:true, fillColor:'#ec4899', fillOpacity:.78, lineJoin:'round' };
 
   const BR_URL = '/api/geo/brazil';
   const US_URL = '/api/geo/us';
-
-  function toast(msg){ if(!toastEl) return; toastEl.textContent = msg; toastEl.classList.remove('hidden'); setTimeout(()=>toastEl.classList.add('hidden'), 2200); }
-  function renderCount(){ counter.textContent = String(visited.size); }
 
   const BR_UF_BY_NAME = {
     "Acre":"AC","Alagoas":"AL","Amapá":"AP","Amazonas":"AM","Bahia":"BA","Ceará":"CE","Distrito Federal":"DF","Espírito Santo":"ES",
@@ -24,11 +22,14 @@
   };
   const normalize = s => String(s||'').normalize('NFD').replace(/\p{Diacritic}/gu,'');
 
+  function toast(msg){ if(!toastEl) return; toastEl.textContent = msg; toastEl.classList.remove('hidden'); setTimeout(()=>toastEl.classList.add('hidden'), 2200); }
+  function renderCount(){ if (counter) counter.textContent = String(visited.size); }
+
   function stateIdFrom(feature){
     const p = feature?.properties || {};
     const admin  = (p.country || p.admin || '').toString().toUpperCase();
     const isBR   = admin.includes('BRA');
-    const isUS   = admin.includes('UNITED');
+    const isUS   = admin.includes('UNITED'); // United States
     const name   = p.name || p.state_name || p.state || '';
     const code   = (p.state_code || p.code || p.postal || '').toString().toUpperCase();
     if (isUS) { const us = code || normalize(name).slice(0,2).toUpperCase(); return `US-${us}`; }
@@ -36,18 +37,17 @@
     return `XX-${Math.random().toString(36).slice(2,7)}`;
   }
 
-  // mapa
+  // Mapa
   const map = L.map('map', { zoomControl:true, scrollWheelZoom:true, tap:true });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
   map.setView([10,-30], 3);
   setTimeout(()=>map.invalidateSize(), 150);
 
   function applyStyle(layer, id){
     layer.setStyle(visited.has(id) ? styleV : styleN);
-    if (visited.has(id)) {
-      // traz pra frente p/ destacar sobre vizinhos
-      if (layer.bringToFront) layer.bringToFront();
-    }
+    if (visited.has(id) && layer.bringToFront) layer.bringToFront();
   }
 
   function toggleVisit(id, layer){
@@ -58,18 +58,19 @@
     return nowVisited;
   }
 
-  function onEach(feature, layer){
+  function wireFeature(feature, layer){
     const id   = stateIdFrom(feature);
     const name = feature?.properties?.name || feature?.properties?.state_name || 'Estado';
 
-    // garante fill ativo em alguns navegadores
+    // reforça interatividade
+    layer.options.interactive = true;
     layer.options.fill = true;
 
     applyStyle(layer, id);
     layer.bindTooltip(name, { sticky:true, direction:'auto' });
 
-    // click cobre mouse + toque no Leaflet
-    layer.on('click', async ()=>{
+    // usar pointerdown para cobrir toque + mouse em iOS/Android/desktop
+    layer.on('pointerdown', async ()=>{
       const nowVisited = toggleVisit(id, layer);
       try{
         await fetch('/api/map/states', {
@@ -84,34 +85,35 @@
       }
     });
 
-    // teclado (Enter/Space)
+    // acessibilidade teclado
     layer.on('keypress', (ev)=>{
       const k = ev.originalEvent?.key;
-      if (k === 'Enter' || k === ' ') layer.fire('click');
+      if (k === 'Enter' || k === ' ') layer.fire('pointerdown');
     });
   }
 
   async function loadAll(){
-    // 1) carrega salvos
-    const saved = await fetch('/api/map/states', { cache:'no-store' }).then(r=>r.json()).catch(()=>[]);
+    // 1) estados salvos
+    let saved = [];
+    try { saved = await fetch('/api/map/states', { cache:'no-store' }).then(r=>r.json()); } catch {}
     saved.forEach(x=>visited.add(x));
     renderCount();
 
-    // 2) geojson via backend (evita CORS)
+    // 2) geojson via backend (sem CORS)
     const [gjBR, gjUS] = await Promise.all([
       fetch(BR_URL).then(r=>r.json()),
       fetch(US_URL).then(r=>r.json()),
     ]);
 
-    const layerBR = L.geoJSON(gjBR, { onEachFeature: onEach });
-    const layerUS = L.geoJSON(gjUS, { onEachFeature: onEach });
+    const layerBR = L.geoJSON(gjBR, { onEachFeature: wireFeature });
+    const layerUS = L.geoJSON(gjUS, { onEachFeature: wireFeature });
 
     const group = L.featureGroup([layerBR, layerUS]).addTo(map);
     map.fitBounds(group.getBounds(), { padding:[20,20] });
 
-    // depois de adicionar, re-aplica estilo (garante que os visitados fiquem evidentes)
-    layerBR.eachLayer(l => { const f = l.feature; applyStyle(l, stateIdFrom(f)); });
-    layerUS.eachLayer(l => { const f = l.feature; applyStyle(l, stateIdFrom(f)); });
+    // garante que os já visitados apareçam “acesos” pós-fitBounds
+    layerBR.eachLayer(l => applyStyle(l, stateIdFrom(l.feature)));
+    layerUS.eachLayer(l => applyStyle(l, stateIdFrom(l.feature)));
   }
 
   resetBtn?.addEventListener('click', async ()=>{
@@ -119,7 +121,7 @@
     try{
       await fetch('/api/map/clear', { method:'POST' });
       visited.clear(); renderCount();
-      loadAll();
+      loadAll(); // recarrega e reaplica estilos
       toast('Contador resetado 👍');
     }catch{
       toast('Não deu pra resetar agora');
