@@ -3,44 +3,218 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="format-detection" content="telephone=no">
   <title>24ever — Our Map</title>
+
   <link rel="stylesheet" href="/styles.css" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+
   <style>
-    #map { height: calc(100svh - 220px); min-height: 420px; border-radius: 1rem; overflow: hidden; }
+    /* área visível grande e estável no mobile */
+    #map { height: calc(100svh - 220px); min-height: 520px; border-radius: 1rem; overflow: hidden; }
     .map-wrap { background: var(--glass); border:1px solid rgba(255,255,255,.7); border-radius:1rem; padding:.75rem; }
     .legend-dot { display:inline-block; width:12px; height:12px; border-radius:999px; background:#ec4899; vertical-align:middle; margin-right:6px; }
-    /* garante eventos de toque funcionarem bem no iOS */
-    .leaflet-container { touch-action: none; }
+    .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(90px + env(safe-area-inset-bottom)); background:#111827; color:#fff; padding:.6rem .9rem; border-radius:.75rem; font-size:.9rem; z-index:70; box-shadow:0 10px 24px rgba(0,0,0,.25); }
+    .hidden{display:none}
   </style>
 </head>
 <body class="pb-24">
+  <!-- NAVBAR -->
   <nav class="nav fixed top-0 left-0 right-0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="/" class="brand">24ever</a>
       <button class="hamb" aria-label="Abrir menu" aria-expanded="false"><span></span><span></span><span></span></button>
       <div class="links">
-        <a href="/">Home</a><a href="/games">Games</a><a href="/calendar">Calendar</a><a href="/map">Our Map</a>
-        <a href="/notes">Notes</a><a href="/links">Links</a>
+        <a href="/">Home</a>
+        <a href="/games">Games</a>
+        <a href="/calendar">Calendar</a>
+        <a href="/map">Our Map</a>
+        <a href="/notes">Notes</a>
+        <a href="/links">Links</a>
         <form action="/logout" method="post" class="logout"><button> sair </button></form>
       </div>
     </div>
   </nav>
+  <aside id="drawer" class="drawer">
+    <div class="drawer-inner">
+      <a href="/" class="drawer-link">Home</a>
+      <a href="/games" class="drawer-link">Games</a>
+      <a href="/calendar" class="drawer-link">Calendar</a>
+      <a href="/map" class="drawer-link">Our Map</a>
+      <a href="/notes" class="drawer-link">Notes</a>
+      <a href="/links" class="drawer-link">Links</a>
+      <form action="/logout" method="post"><button class="drawer-link">sair</button></form>
+    </div>
+  </aside>
 
   <main class="max-w-6xl mx-auto px-4 pt-24">
-    <div class="flex items-center justify-between mb-3">
-      <h1 class="text-2xl font-extrabold">Our Map</h1>
-      <div class="flex items-center gap-2">
-        <div class="text-sm text-gray-600"><span class="legend-dot"></span> Visitado • <span id="visitedCount">0</span></div>
-        <button id="btnReset" class="px-3 py-2 rounded-xl bg-pink-100 text-pink-700 text-sm">Resetar</button>
+    <header class="flex items-end justify-between mb-4">
+      <div>
+        <h1 class="text-2xl font-extrabold">Our Map</h1>
+        <p class="text-sm text-gray-600 mt-1">Toque nos <b>estados</b> para marcar onde já fomos 💖</p>
       </div>
+      <div class="text-sm text-gray-600">
+        <span class="legend-dot"></span> Visitado • <span id="visitedCount">0</span> estados
+      </div>
+    </header>
+
+    <div class="toolbar flex flex-wrap gap-2 mb-4">
+      <button id="btnResetCounter" class="px-3 py-2 rounded-xl bg-pink-100 text-pink-700">Resetar contador</button>
     </div>
-    <div class="map-wrap"><div id="map"></div></div>
+
+    <div class="map-wrap">
+      <div id="map" role="region" aria-label="Mapa por estados do Brasil e EUA"></div>
+    </div>
   </main>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="/js/navbar.js"></script>
-  <script src="/js/map.js"></script>
+  <script>
+    // ---- helpers UI
+    const toastEl = document.getElementById('toast');
+    function toast(msg){ toastEl.textContent = msg; toastEl.classList.remove('hidden'); setTimeout(()=>toastEl.classList.add('hidden'), 2400); }
+
+    // ---- estado visitados
+    const visitedStateIds = new Set();
+    const visitedCount = document.getElementById('visitedCount');
+
+    const styleNormal  = { color:'#ec4899', weight:1,   fillColor:'#fbcfe8', fillOpacity:.25 };
+    const styleVisited = { color:'#ec4899', weight:1.2, fillColor:'#ec4899', fillOpacity:.6 };
+
+    function renderCount(){ visitedCount.textContent = String(visitedStateIds.size); }
+
+    function stateIdFrom(feature){
+      // cria um id estável "BR-SP" / "US-CA" etc, tentando vários campos
+      const p = feature?.properties || {};
+      const code = (p.code || p.iso_3166_2 || p.state_code || p.postal || p.abbrev || '').toString().toUpperCase();
+      let cc = (p.country_code || p.country || p.admin || p.iso_a2 || '').toString().toUpperCase();
+      const name = (p.name || p.state || p.state_name || '').toString();
+      if (!cc && /brazil/i.test(p.admin || p.country || '')) cc = 'BR';
+      if (!cc && /united states/i.test(p.admin || p.country || '')) cc = 'US';
+      if (code.includes('-')) return code;
+      if (cc && code) return `${cc}-${code.slice(0,3)}`;
+      if (cc && name) return `${cc}-${name.normalize('NFD').replace(/\p{Diacritic}/gu,'').toUpperCase().split(/\s+/)[0].slice(0,3)}`;
+      return `XX-${Math.random().toString(36).slice(2,7)}`; // fallback (não deve acontecer)
+    }
+
+    function nameFrom(feature){
+      const p = feature?.properties || {};
+      return p.name || p.state_name || p.state || p.postal || 'Estado';
+    }
+
+    async function loadVisitedFromAPI(){
+      try{
+        const arr = await (await fetch('/api/map/states', { cache:'no-store' })).json();
+        visitedStateIds.clear();
+        arr.forEach(id => visitedStateIds.add(id));
+        renderCount();
+      }catch(e){
+        console.warn('Falha ao carregar estados visitados:', e);
+        toast('Não consegui carregar os estados salvos 😔');
+      }
+    }
+
+    async function saveVisited(id, visited){
+      try{
+        await fetch('/api/map/states', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ id, visited })
+        });
+      }catch(e){
+        console.warn('Falha ao salvar estado visitado:', e);
+        toast('Não consegui salvar agora. Tenta de novo?');
+      }
+    }
+
+    // ---- Leaflet
+    let map, layerBR, layerUS;
+
+    function initMap(){
+      map = L.map('map', { zoomControl:true, scrollWheelZoom:true });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '&copy; OpenStreetMap'
+      }).addTo(map);
+      map.setView([0,0], 2);
+      setTimeout(()=>map.invalidateSize(), 120);
+    }
+
+    function onEach(feature, layerEl){
+      const id = stateIdFrom(feature);
+      const isVisited = visitedStateIds.has(id);
+      layerEl.setStyle(isVisited? styleVisited : styleNormal);
+
+      layerEl.on('click', () => {
+        const nowVisited = !visitedStateIds.has(id);
+        if (nowVisited) visitedStateIds.add(id); else visitedStateIds.delete(id);
+        layerEl.setStyle(nowVisited? styleVisited : styleNormal);
+        renderCount();
+        saveVisited(id, nowVisited);
+      });
+
+      layerEl.bindTooltip(`${nameFrom(feature)}`,{sticky:true, direction:'auto'});
+    }
+
+    async function fetchJSONWithFallback(primary, fallbackLocal){
+      try{
+        const r = await fetch(primary, { cache: 'no-store' });
+        if (!r.ok) throw new Error('primary fetch failed');
+        return await r.json();
+      }catch(e){
+        console.warn('GeoJSON primário falhou, tentando local:', e);
+        const r2 = await fetch(fallbackLocal, { cache: 'no-store' });
+        if (!r2.ok) throw new Error('fallback fetch failed');
+        toast('Carreguei usando o arquivo local do mapa 😉');
+        return await r2.json();
+      }
+    }
+
+    async function loadBRandUS(){
+      // fontes GeoJSON (estados)
+      const URL_BR = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson';
+      const URL_US = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/united-states.geojson';
+      // fallbacks locais opcionais (coloque se quiser)
+      const FBR = '/data/brazil-states.json';
+      const FUS = '/data/united-states.json';
+
+      const [gjBR, gjUS] = await Promise.all([
+        fetchJSONWithFallback(URL_BR, FBR),
+        fetchJSONWithFallback(URL_US, FUS),
+      ]);
+
+      if (layerBR) map.removeLayer(layerBR);
+      if (layerUS) map.removeLayer(layerUS);
+
+      layerBR = L.geoJSON(gjBR, { onEachFeature:onEach });
+      layerUS = L.geoJSON(gjUS, { onEachFeature:onEach });
+
+      const group = L.featureGroup([layerBR, layerUS]).addTo(map);
+      map.fitBounds(group.getBounds(), { padding:[20,20] });
+    }
+
+    // reset do contador (somente visual + persistência limpando todos os ids atuais)
+    document.getElementById('btnResetCounter').addEventListener('click', async ()=>{
+      if (!visitedStateIds.size) return;
+      const ids = Array.from(visitedStateIds);
+      visitedStateIds.clear();
+      renderCount();
+      // aplica visual
+      [layerBR, layerUS].forEach(l => l?.eachLayer(el=>el.setStyle(styleNormal)));
+      // persiste (uma chamada por id atual)
+      await Promise.all(ids.map(id => saveVisited(id, false)));
+      toast('Contador resetado 👍');
+    }, {passive:true});
+
+    (async function(){
+      initMap();
+      await loadVisitedFromAPI();
+      await loadBRandUS();
+    })();
+  </script>
 </body>
 </html>
