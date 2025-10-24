@@ -1,176 +1,168 @@
-// BR + EUA clicável com persistência via /api/map/states.
-// Corrige: usar 'click' (e fallback touchstart), IDs determinísticos, re-aplica estilos.
+// Our Travels – mapa mundial interativo (Leaflet)
+// Pinta países tocando/clicando, salva no localStorage, exporta/importa JSON.
 
 (function(){
-  const toastEl = document.getElementById('toast');
-  const visited = new Set();
-  const counter  = document.getElementById('visitedCount');
-  const resetBtn = document.getElementById('btnReset');
-
-  const styleN = { color:'#ec4899', weight:1,   fill:true, fillColor:'#fbcfe8', fillOpacity:.22, lineJoin:'round' };
-  const styleV = { color:'#ec4899', weight:3,   fill:true, fillColor:'#ec4899', fillOpacity:.78, lineJoin:'round' };
-
-  const BR_URL = '/api/geo/brazil';
-  const US_URL = '/api/geo/us';
-
-  const BR_UF_BY_NAME = {
-    "Acre":"AC","Alagoas":"AL","Amapá":"AP","Amazonas":"AM","Bahia":"BA","Ceará":"CE","Distrito Federal":"DF","Espírito Santo":"ES",
-    "Goiás":"GO","Maranhão":"MA","Mato Grosso":"MT","Mato Grosso do Sul":"MS","Minas Gerais":"MG","Pará":"PA","Paraíba":"PB","Paraná":"PR",
-    "Pernambuco":"PE","Piauí":"PI","Rio de Janeiro":"RJ","Rio Grande do Norte":"RN","Rio Grande do Sul":"RS","Rondônia":"RO","Roraima":"RR",
-    "Santa Catarina":"SC","São Paulo":"SP","Sergipe":"SE","Tocantins":"TO"
-  };
-
-  const US_CODE_BY_NAME = {
-    "Alabama":"AL","Alaska":"AK","Arizona":"AZ","Arkansas":"AR","California":"CA","Colorado":"CO","Connecticut":"CT","Delaware":"DE",
-    "District of Columbia":"DC","Florida":"FL","Georgia":"GA","Hawaii":"HI","Idaho":"ID","Illinois":"IL","Indiana":"IN","Iowa":"IA",
-    "Kansas":"KS","Kentucky":"KY","Louisiana":"LA","Maine":"ME","Maryland":"MD","Massachusetts":"MA","Michigan":"MI","Minnesota":"MN",
-    "Mississippi":"MS","Missouri":"MO","Montana":"MT","Nebraska":"NE","Nevada":"NV","New Hampshire":"NH","New Jersey":"NJ",
-    "New Mexico":"NM","New York":"NY","North Carolina":"NC","North Dakota":"ND","Ohio":"OH","Oklahoma":"OK","Oregon":"OR",
-    "Pennsylvania":"PA","Rhode Island":"RI","South Carolina":"SC","South Dakota":"SD","Tennessee":"TN","Texas":"TX","Utah":"UT",
-    "Vermont":"VT","Virginia":"VA","Washington":"WA","West Virginia":"WV","Wisconsin":"WI","Wyoming":"WY","Puerto Rico":"PR"
-  };
-
-  const normalize = s => String(s||'').normalize('NFD').replace(/\p{Diacritic}/gu,'');
-
-  function toast(msg){
-    if(!toastEl) return;
-    toastEl.textContent = msg;
-    toastEl.classList.remove('hidden');
-    setTimeout(()=>toastEl.classList.add('hidden'), 1800);
-  }
-  function renderCount(){ if (counter) counter.textContent = String(visited.size); }
-
-  function stateIdFrom(country, feature){
-    const p = feature?.properties || {};
-    const name = p.name || p.state_name || p.state || '';
-    const code = (p.state_code || p.code || p.postal || '').toString().toUpperCase();
-
-    if (country === 'US') {
-      const us = code
-        || US_CODE_BY_NAME[name]
-        || US_CODE_BY_NAME[Object.keys(US_CODE_BY_NAME).find(k => normalize(k) === normalize(name))]
-        || normalize(name).slice(0,2).toUpperCase();
-      return `US-${us}`;
-    }
-    if (country === 'BR') {
-      const uf = BR_UF_BY_NAME[name]
-        || BR_UF_BY_NAME[Object.keys(BR_UF_BY_NAME).find(k => normalize(k) === normalize(name))]
-        || code || normalize(name).slice(0,2).toUpperCase();
-      return `BR-${uf}`;
-    }
-    return `XX-${normalize(name)}`;
-  }
-
-  // mapa base + pane para garantir clique acima dos tiles
-  const map = L.map('map', { zoomControl:true, scrollWheelZoom:true, tap:true });
-  const statesPane = map.createPane('states');
-  statesPane.style.zIndex = 650;
-  statesPane.style.pointerEvents = 'auto';
-
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19, attribution: '&copy; OpenStreetMap'
-  }).addTo(map);
-
-  map.setView([10,-30], 3);
-  setTimeout(()=>map.invalidateSize(), 150);
-
-  function applyStyle(layer, id){
-    layer.setStyle(visited.has(id) ? styleV : styleN);
-    if (visited.has(id) && layer.bringToFront) layer.bringToFront();
-  }
-
-  function toggleVisit(id, layer){
-    const nowVisited = !visited.has(id);
-    if (nowVisited) visited.add(id); else visited.delete(id);
-    applyStyle(layer, id);
-    renderCount();
-    return nowVisited;
-  }
-
-  function wireFeature(country){
-    return (feature, layer)=>{
-      const id   = stateIdFrom(country, feature);
-      const name = feature?.properties?.name || feature?.properties?.state_name || 'Estado';
-
-      layer.options.interactive = true;
-      layer.options.fill = true;
-      layer.options.pane = 'states';
-
-      applyStyle(layer, id);
-      layer.bindTooltip(name, { sticky:true, direction:'auto' });
-
-      const handle = async ()=>{
-        const nowVisited = toggleVisit(id, layer);
-        try{
-          const r = await fetch('/api/map/states', {
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ id, visited: nowVisited })
-          });
-          if (!r.ok) throw new Error('HTTP '+r.status);
-        }catch(e){
-          // reverte se falhar
-          toggleVisit(id, layer);
-          toast('Não consegui salvar agora. Tente novamente.');
-          console.error(e);
-        }
+    const MAP_ID = 'map';
+    const LS_KEY = '24ever_travel_visited_v1';
+    const visited = new Set(JSON.parse(localStorage.getItem(LS_KEY) || '[]'));
+    const visitedCountEl = document.getElementById('visitedCount');
+  
+    const mapEl = document.getElementById(MAP_ID);
+    if (!mapEl) return;
+  
+    // ---- Inicializa mapa (sem tiles, fundo clean) ----
+    const map = L.map(MAP_ID, {
+      zoomControl: true,
+      attributionControl: false,
+      worldCopyJump: true
+    });
+  
+    // Fundo neutro (sem tiles) – só uma camada branca translúcida
+    const bg = L.rectangle([[-90,-180],[90,180]], {
+      color: '#ffffff', weight: 0, fillOpacity: 0.0
+    }).addTo(map);
+  
+    // Ajuste inicial pra ver o mundo
+    map.fitWorld({ animate: false, padding: [20,20] });
+  
+    // ---- Estilos ----
+    const colorVisited = '#ec4899';
+    const colorBorder = '#ffffff';
+    const colorDefault = '#e5e7eb';
+  
+    function styleFor(feature){
+      const id = countryId(feature);
+      const isVisited = visited.has(id);
+      return {
+        weight: 0.6,
+        color: colorBorder,
+        opacity: 1,
+        fillColor: isVisited ? colorVisited : colorDefault,
+        fillOpacity: isVisited ? 0.85 : 0.6
       };
-
-      // clique padrão + fallback touchstart (alguns iOS antigos)
-      layer.on('click', handle);
-      layer.on('touchstart', (ev)=>{ ev.originalEvent?.preventDefault?.(); handle(); });
-
-      // acessibilidade teclado
-      layer.on('keypress', (ev)=>{
-        const k = ev.originalEvent?.key;
-        if (k === 'Enter' || k === ' ') handle();
-      });
-    };
-  }
-
-  let layerBR, layerUS;
-
-  async function loadAll(){
-    // 1) estados salvos
-    visited.clear();
-    try {
-      const saved = await fetch('/api/map/states', { cache:'no-store' }).then(r=>r.json());
-      saved.forEach(x=>visited.add(x));
-    } catch {}
-    renderCount();
-
-    // 2) geojson via backend
-    const [gjBR, gjUS] = await Promise.all([
-      fetch(BR_URL).then(r=>r.json()),
-      fetch(US_URL).then(r=>r.json()),
-    ]);
-
-    // remove camadas antigas (se recarregar)
-    if (layerBR) map.removeLayer(layerBR);
-    if (layerUS) map.removeLayer(layerUS);
-
-    layerBR = L.geoJSON(gjBR, { onEachFeature: wireFeature('BR'), pane:'states' });
-    layerUS = L.geoJSON(gjUS, { onEachFeature: wireFeature('US'), pane:'states' });
-
-    const group = L.featureGroup([layerBR, layerUS]).addTo(map);
-    map.fitBounds(group.getBounds(), { padding:[20,20] });
-
-    // reaplica estilos pós-fitBounds
-    layerBR.eachLayer(l => applyStyle(l, stateIdFrom('BR', l.feature)));
-    layerUS.eachLayer(l => applyStyle(l, stateIdFrom('US', l.feature)));
-  }
-
-  resetBtn?.addEventListener('click', async ()=>{
-    if (!visited.size) return;
-    try{
-      const r = await fetch('/api/map/clear', { method:'POST' });
-      if (!r.ok) throw new Error();
-      await loadAll();
-      toast('Contador resetado 👍');
-    }catch{
-      toast('Não deu pra resetar agora');
     }
-  }, { passive:true });
-
-  loadAll();
-})();
+  
+    function countryId(feature){
+      // tenta vários campos comuns pra id estável
+      const p = feature.properties || {};
+      return p.iso_a3 || p.ISO_A3 || p.adm0_a3 || p.gu_a3 || p.name || p.ADMIN || p.NAME || String(feature.id || '').trim();
+    }
+    function countryName(feature){
+      const p = feature.properties || {};
+      return p.name || p.ADMIN || p.NAME || p.sovereignt || p.formal_en || p.geounit || countryId(feature) || 'País';
+    }
+  
+    // ---- Eventos por país ----
+    function onEach(feature, layer){
+      layer.on({
+        click: () => toggleCountry(feature, layer),
+        mouseover: () => layer.setStyle({ fillOpacity: styleFor(feature).fillOpacity + 0.08 }),
+        mouseout: () => layer.setStyle(styleFor(feature)),
+        // Toque mais confortável no iPhone
+        touchstart: (e) => { e.originalEvent.preventDefault?.(); toggleCountry(feature, layer); }
+      });
+      layer.bindTooltip(countryName(feature), {sticky:true, direction:'center', className:'leaflet-tooltip-own'});
+    }
+  
+    function toggleCountry(feature, layer){
+      const id = countryId(feature);
+      if (!id) return;
+      if (visited.has(id)) visited.delete(id); else visited.add(id);
+      layer.setStyle(styleFor(feature));
+      persist();
+      updateCounter();
+    }
+  
+    function persist(){
+      localStorage.setItem(LS_KEY, JSON.stringify(Array.from(visited)));
+    }
+    function updateCounter(){
+      visitedCountEl && (visitedCountEl.textContent = String(visited.size));
+    }
+  
+    // ---- Carrega GeoJSON (com fallback de fontes) ----
+    (async function loadData(){
+      const sources = [
+        // cdn jsDelivr com países (GeoJSON leve, inclui nomes/ISO)
+        'https://cdn.jsdelivr.net/gh/johan/world.geo.json@master/countries.geo.json',
+        // alternativa (outro mirror)
+        'https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json',
+      ];
+      let data = null;
+      for (const url of sources){
+        try{
+          const r = await fetch(url, {cache:'no-store'});
+          if (r.ok){
+            data = await r.json();
+            break;
+          }
+        }catch(_){}
+      }
+      if (!data){
+        // fallback mínimo caso tudo falhe: desenha só o retângulo do mundo
+        console.warn('Falha ao baixar GeoJSON. Mostrando fundo simples.');
+        updateCounter();
+        return;
+      }
+  
+      // Ajuste de CRS/geo se necessário
+      const layer = L.geoJSON(data, {
+        style: styleFor,
+        onEachFeature: onEach
+      }).addTo(map);
+  
+      // melhora o ajuste ao conteúdo
+      try { map.fitBounds(layer.getBounds(), {padding:[10,10]}); } catch(_){}
+  
+      updateCounter();
+    })();
+  
+    // ---- Botões: reset/export/import ----
+    const btnReset = document.getElementById('btnReset');
+    const btnExport = document.getElementById('btnExport');
+    const btnImport = document.getElementById('btnImport');
+    const importBox = document.getElementById('importBox');
+    const importText = document.getElementById('importText');
+    const confirmImport = document.getElementById('confirmImport');
+    const cancelImport = document.getElementById('cancelImport');
+  
+    btnReset?.addEventListener('click', ()=>{
+      if (!confirm('Tem certeza que quer limpar tudo?')) return;
+      visited.clear();
+      persist();
+      // recarrega para reflitar estilos rapidamente
+      location.reload();
+    });
+  
+    btnExport?.addEventListener('click', ()=>{
+      const json = JSON.stringify(Array.from(visited), null, 2);
+      // copia pro clipboard (quando disponível)
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(json).catch(()=>{});
+      }
+      // mostra também num prompt pra facilitar
+      alert('IDs copiados para a área de transferência (se permitido). Abaixo o JSON:\n\n' + json);
+    });
+  
+    btnImport?.addEventListener('click', ()=>{
+      importBox?.classList.add('show');
+      importText?.focus();
+    });
+    cancelImport?.addEventListener('click', ()=>{
+      importBox?.classList.remove('show');
+      importText.value = '';
+    });
+    confirmImport?.addEventListener('click', ()=>{
+      try{
+        const arr = JSON.parse(importText.value || '[]');
+        if (!Array.isArray(arr)) throw new Error('Formato inválido');
+        visited.clear();
+        arr.forEach(id=>visited.add(String(id)));
+        persist();
+        location.reload();
+      }catch(e){
+        alert('JSON inválido. Cole exatamente o que foi exportado.');
+      }
+    });
+  })();
+  

@@ -3,49 +3,40 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="format-detection" content="telephone=no">
   <title>24ever — Our Map</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+
   <link rel="stylesheet" href="/styles.css" />
-  <link rel="stylesheet" href="/css/ios-hotfix.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
   <style>
-    body{font-family:Poppins,system-ui,Arial}
-    #map { height: 72vh; border-radius: 12px; }
-    .toast {
-      position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
-      background: #111827; color: #fff; padding: .625rem .9rem; border-radius: 999px;
-      box-shadow: 0 10px 25px rgba(0,0,0,.25); pointer-events:none; transition: opacity .25s;
-    }
-    .toast.hidden{ opacity:0; }
+    #map { height: calc(100svh - 200px); min-height: 420px; border-radius: 1rem; overflow: hidden; }
+    .map-wrap { background: var(--glass); border:1px solid rgba(255,255,255,.7); border-radius:1rem; padding: .75rem; }
+    .legend-dot { display:inline-block; width:12px; height:12px; border-radius:999px; background:#ec4899; vertical-align:middle; margin-right:6px; }
+    .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(90px + env(safe-area-inset-bottom)); background:#111827; color:#fff; padding:.6rem .9rem; border-radius:.75rem; font-size:.9rem; z-index:70; box-shadow:0 10px 24px rgba(0,0,0,.25); }
+    .hidden{display:none}
   </style>
 </head>
 <body class="pb-24">
-  <!-- NAV -->
+  <!-- NAVBAR -->
   <nav class="nav fixed top-0 left-0 right-0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="/" class="brand">24ever</a>
-      <button class="hamb" aria-label="Abrir menu" aria-expanded="false">
-        <span></span><span></span><span></span>
-      </button>
+      <button class="hamb" aria-label="Abrir menu" aria-expanded="false"><span></span><span></span><span></span></button>
       <div class="links">
         <a href="/">Home</a>
         <a href="/games">Games</a>
         <a href="/calendar">Calendar</a>
-        <a href="/map" class="active">Our Map</a>
+        <a href="/map">Our Map</a>
         <a href="/notes">Notes</a>
         <a href="/links">Links</a>
         <form action="/logout" method="post" class="logout"><button> sair </button></form>
       </div>
     </div>
   </nav>
-
-  <!-- Drawer -->
   <aside id="drawer" class="drawer">
     <div class="drawer-inner">
       <a href="/" class="drawer-link">Home</a>
@@ -58,23 +49,167 @@
     </div>
   </aside>
 
-  <main class="pt-20 max-w-6xl mx-auto px-4">
-    <header class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 mb-4">
-      <h1 class="text-2xl font-bold">Our Map</h1>
-      <p class="text-gray-600">Clique nos estados do <b>Brasil</b> e dos <b>EUA</b> para marcar visitados.</p>
+  <main class="max-w-6xl mx-auto px-4 pt-24">
+    <header class="flex items-end justify-between mb-4">
+      <div>
+        <h1 class="text-2xl font-extrabold">Our Map</h1>
+        <p class="text-sm text-gray-600 mt-1">Toque nos <b>estados</b> do Brasil e dos EUA para marcar onde já fomos 💖</p>
+      </div>
+      <div class="text-sm text-gray-600">
+        <span class="legend-dot"></span> Visitado • <span id="visitedCount">0</span> estados
+      </div>
     </header>
 
-    <div class="flex items-center gap-4 mb-3">
-      <div class="text-sm text-gray-700">Visitados: <b id="visitedCount">0</b></div>
-      <button id="btnReset" class="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm">Resetar</button>
+    <div class="map-wrap">
+      <div id="map" role="region" aria-label="Mapa por estados do Brasil e EUA"></div>
     </div>
-
-    <div id="map" class="w-full"></div>
   </main>
 
-  <div id="toast" class="toast hidden"></div>
+  <div id="audioBar" class="bg-white/80 border-t p-2 fixed bottom-0 left-0 right-0 flex items-center gap-3">
+    <button id="playPause" class="px-3 py-1 rounded-lg bg-pink-500 text-white text-sm">Tocar</button>
+    <input id="volume" type="range" min="0" max="1" step="0.01" value="0.6" />
+    <span id="currentTrack" class="text-xs text-gray-600"></span>
+    <audio id="bgm" preload="auto"></audio>
+  </div>
 
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="/js/navbar.js"></script>
-  <script src="/js/travel.js"></script>
+  <script src="/js/main.js"></script>
+  <script>
+    // ---- helpers UI
+    const toastEl = document.getElementById('toast');
+    function toast(msg){ toastEl.textContent = msg; toastEl.classList.remove('hidden'); setTimeout(()=>toastEl.classList.add('hidden'), 2600); }
+
+    // ---- estado visitados
+    const visitedStateIds = new Set();
+    const visitedCount = document.getElementById('visitedCount');
+    const styleNormal  = { color:'#ec4899', weight:1,   fillColor:'#fbcfe8', fillOpacity:.25 };
+    const styleVisited = { color:'#ec4899', weight:1.2, fillColor:'#ec4899', fillOpacity:.6 };
+
+    let map, layerBR, layerUS;
+
+    function renderCount(){ visitedCount.textContent = String(visitedStateIds.size); }
+
+    async function loadVisited(){
+      try{
+        const r = await fetch('/api/map/states'); if(!r.ok) throw new Error('API error');
+        const arr = await r.json(); arr.forEach(id=>visitedStateIds.add(id));
+        renderCount();
+      }catch(e){
+        console.warn('Falha ao carregar estados visitados:', e);
+        toast('Não consegui carregar os estados salvos 😔');
+      }
+    }
+
+    // Normaliza um ID estável para salvar
+    // BR: propriedades diferentes entre fontes — tentamos code, sigla, name, etc.
+    function idFromBR(f){
+      const p = f.properties || {};
+      const sigla = (p.sigla || p.code || p.UF || '').toString().trim().toUpperCase();
+      if (sigla) return `BR-${sigla}`;
+      const name = (p.name || p.NOME || '').normalize('NFD').replace(/\p{Diacritic}/gu,'').toUpperCase();
+      const mapSigla = {
+        'ACRE':'AC','ALAGOAS':'AL','AMAPA':'AP','AMAZONAS':'AM','BAHIA':'BA','CEARA':'CE',
+        'DISTRITO FEDERAL':'DF','ESPIRITO SANTO':'ES','GOIAS':'GO','MARANHAO':'MA','MATO GROSSO':'MT',
+        'MATO GROSSO DO SUL':'MS','MINAS GERAIS':'MG','PARA':'PA','PARAIBA':'PB','PARANA':'PR','PERNAMBUCO':'PE',
+        'PIAUI':'PI','RIO DE JANEIRO':'RJ','RIO GRANDE DO NORTE':'RN','RIO GRANDE DO SUL':'RS','RONDONIA':'RO',
+        'RORAIMA':'RR','SANTA CATARINA':'SC','SAO PAULO':'SP','SERGIPE':'SE','TOCANTINS':'TO'
+      };
+      if (mapSigla[name]) return `BR-${mapSigla[name]}`;
+      return `BR-${name.slice(0,3)}`;
+    }
+
+    function idFromUS(f){
+      const p = f.properties || {};
+      // click_that_hood usa "name" e "state_code"; united-states.geojson costuma trazer "postal"
+      const code = (p.state_code || p.postal || p.STUSPS || '').toString().trim().toUpperCase();
+      if (code) return `US-${code}`;
+      const name = (p.name || p.NAME || '').toString().trim().toUpperCase();
+      if (name) return `US-${name.slice(0,3)}`;
+      return 'US-XX';
+    }
+
+    function attachHandlers(feature, layerEl, mkId, labelName){
+      const id = mkId(feature);
+      const isVisited = visitedStateIds.has(id);
+      layerEl.setStyle(isVisited? styleVisited : styleNormal);
+      layerEl.on('click', async ()=>{
+        const nowVisited = !visitedStateIds.has(id);
+        if (nowVisited) visitedStateIds.add(id); else visitedStateIds.delete(id);
+        layerEl.setStyle(nowVisited? styleVisited : styleNormal);
+        renderCount();
+        try{
+          await fetch('/api/map/states', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ id, visited: nowVisited })
+          });
+        }catch(e){
+          console.warn('Falha ao salvar estado:', e);
+          toast('Não consegui salvar agora. Tenta de novo?');
+        }
+      });
+      const nm = labelName(feature);
+      layerEl.bindTooltip(nm,{sticky:true, direction:'auto'});
+    }
+
+    function brName(f){ return (f.properties?.name || f.properties?.NOME || 'Estado').toString(); }
+    function usName(f){ return (f.properties?.name || f.properties?.NAME || 'State').toString(); }
+
+    async function fetchJSONWithFallback(primary, fallbackLocal){
+      try{
+        const r = await fetch(primary, { cache: 'no-store' });
+        if (!r.ok) throw new Error('primary fetch failed');
+        return await r.json();
+      }catch(e){
+        console.warn('GeoJSON primário falhou, tentando local:', e);
+        const r2 = await fetch(fallbackLocal, { cache: 'no-store' });
+        if (!r2.ok) throw new Error('fallback fetch failed');
+        toast('Carreguei o mapa usando o arquivo local 😉');
+        return await r2.json();
+      }
+    }
+
+    async function loadBoth(){
+      // fontes públicas (funcionam bem)
+      const URL_BR = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson';
+      const URL_US = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/united-states.geojson';
+      // fallbacks locais opcionais
+      const FBR = '/data/brazil-states.json';
+      const FUS = '/data/united-states.json';
+
+      const [gjBR, gjUS] = await Promise.all([
+        fetchJSONWithFallback(URL_BR, FBR),
+        fetchJSONWithFallback(URL_US, FUS)
+      ]);
+
+      if (layerBR) map.removeLayer(layerBR);
+      if (layerUS) map.removeLayer(layerUS);
+
+      layerBR = L.geoJSON(gjBR, { onEachFeature: (f, l)=>attachHandlers(f, l, idFromBR, brName) }).addTo(map);
+      layerUS = L.geoJSON(gjUS, { onEachFeature: (f, l)=>attachHandlers(f, l, idFromUS, usName) }).addTo(map);
+
+      // enquadra BR + US juntos
+      const group = L.featureGroup([layerBR, layerUS]);
+      map.fitBounds(group.getBounds(), { padding:[20,20] });
+    }
+
+    function initMap(){
+      map = L.map('map', { zoomControl:true, scrollWheelZoom:true });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '&copy; OpenStreetMap'
+      }).addTo(map);
+      map.setView([10,-30],2);
+      setTimeout(()=>{ map.invalidateSize(); }, 120);
+    }
+
+    (async function(){
+      initMap();
+      await loadVisited();
+      await loadBoth();
+    })();
+  </script>
 </body>
 </html>
