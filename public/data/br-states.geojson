@@ -1,0 +1,9 @@
+{
+    "type": "FeatureCollection",
+    "features": [
+      { "type": "Feature", "properties": { "name": "São Paulo" }, "geometry": { "type": "Polygon", "coordinates": [[[ -53.1, -24.0 ], [ -46.3, -24.0 ], [ -46.3, -20.0 ], [ -53.1, -20.0 ], [ -53.1, -24.0 ]]] } },
+      { "type": "Feature", "properties": { "name": "Rio de Janeiro" }, "geometry": { "type": "Polygon", "coordinates": [[[ -44.9, -23.4 ], [ -41.0, -23.4 ], [ -41.0, -20.5 ], [ -44.9, -20.5 ], [ -44.9, -23.4 ]]] } },
+      { "type": "Feature", "properties": { "name": "Minas Gerais" }, "geometry": { "type": "Polygon", "coordinates": [[[ -52.0, -21.5 ], [ -40.5, -21.5 ], [ -40.5, -14.0 ], [ -52.0, -14.0 ], [ -52.0, -21.5 ]]] } },
+      { "type": "Feature", "properties": { "name": "Bahia" }, "geometry": { "type": "Polygon", "coordinates": [[[ -46.0, -18.5 ], [ -37.0, -18.5 ], [ -37.0, -8.0 ], [ -46.0, -8.0 ], [ -46.0, -18.5 ]]] } }
+    ]
+  }
