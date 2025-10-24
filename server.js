@@ -51,9 +51,9 @@ app.use(session({
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: isProd,                          // precisa https
-    domain: isProd ? '.24ever.com.br' : undefined, // cookie para root e www
-    maxAge: 1000 * 60 * 60 * 24 * 7,         // 7 dias
+    secure: isProd,                                // precisa https em produção
+    domain: isProd ? '.24ever.com.br' : undefined, // vale para www e apex
+    maxAge: 1000 * 60 * 60 * 24 * 7,               // 7 dias
   }
 }));
 
@@ -70,10 +70,10 @@ app.use('/images', express.static(path.join(__dirname, 'public', 'images'), {
   index: false,
 }));
 
-// 2) rota dedicada para DATA (GeoJSON locais do mapa)
+// 2) rota dedicada para GEOJSON do mapa (garante /data/*.geojson público)
 app.use('/data', express.static(path.join(__dirname, 'public', 'data'), {
   setHeaders(res) {
-    // 7 dias de cache tá bom (pode aumentar se quiser)
+    // 7 dias está bom (dados mudam pouco)
     res.setHeader('Cache-Control', 'public, max-age=604800');
   },
   index: false,
@@ -94,9 +94,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// (opcional) desabilita cache para HTML (evita colar telas antigas)
+// (opcional) desabilita cache para HTML (evita telas antigas)
 app.use((req, res, next) => {
-  if (req.method === 'GET' && req.headers.accept && req.headers.accept.includes('text/html')) {
+  if (req.method === 'GET' && (req.headers.accept || '').includes('text/html')) {
     res.setHeader('Cache-Control', 'no-store');
   }
   next();
@@ -153,7 +153,7 @@ app.get('/calendar',(_, res) => res.sendFile(path.join(__dirname, 'public', 'cal
 app.get('/notes',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'notes.html')));
 app.get('/links',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'links.html')));
 
-// ── DATA (persistência em arquivo; aponta para volume se existir)
+// ── DATA (persistência em arquivo; Render volume se existir)
 const DATA_DIR = process.env.DATA_DIR || '/opt/render/project/src/data';
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const EVENTS_FILE = path.join(DATA_DIR, 'events.json');
