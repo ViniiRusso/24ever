@@ -19,7 +19,7 @@ const isProd = process.env.NODE_ENV === 'production';
 
 app.set('trust proxy', 1);
 
-// Canonical HTTPS + www somente em produção
+// Canonical só em produção
 const CANON_HOST = process.env.CANON_HOST || 'www.24ever.com.br';
 if (isProd) {
   app.use((req, res, next) => {
@@ -51,7 +51,7 @@ app.use(session({
   }
 }));
 
-// Assets públicos (imagens liberadas antes do login)
+// Assets públicos
 const ASSET_EXT = /\.(css|js|mjs|png|jpg|jpeg|webp|gif|svg|ico|woff2?|map)$/i;
 
 app.use('/images', express.static(path.join(__dirname, 'public', 'images'), {
@@ -137,17 +137,20 @@ app.get('/notes',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'not
 app.get('/links',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'links.html')));
 
 // DATA (JSON em disco)
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-const EVENTS_FILE = path.join(DATA_DIR, 'events.json');
-const NOTES_FILE  = path.join(DATA_DIR, 'notes.json');
-const MAP_FILE    = path.join(DATA_DIR, 'map.json');
+const EVENTS_FILE= path.join(DATA_DIR, 'events.json');
+const NOTES_FILE = path.join(DATA_DIR, 'notes.json');
+const MAP_FILE   = path.join(DATA_DIR, 'map.json');
+const GJ_BR_FILE = path.join(DATA_DIR, 'brazil-states.geojson');
+const GJ_US_FILE = path.join(DATA_DIR, 'united-states.geojson');
+
 for (const f of [EVENTS_FILE, NOTES_FILE, MAP_FILE]) if (!fs.existsSync(f)) fs.writeFileSync(f, '[]');
 
 const readJSON  = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return []; } };
 const writeJSON = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2));
 
-// APIs
+// --- APIs base ---
 app.get('/api/events', (_req, res) => res.json(readJSON(EVENTS_FILE)));
 app.post('/api/events', (req, res) => {
   const { id, title, start, end, allDay } = req.body || {};
@@ -182,6 +185,7 @@ app.delete('/api/notes/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// --- APIs do Map (persistência) ---
 app.get('/api/map/states', (_req, res) => res.json(readJSON(MAP_FILE)));
 app.post('/api/map/states', (req, res) => {
   const { id, visited } = req.body || {};
@@ -191,6 +195,43 @@ app.post('/api/map/states', (req, res) => {
   const arr = [...set]; writeJSON(MAP_FILE, arr); res.json(arr);
 });
 app.post('/api/map/clear', (_req, res) => { writeJSON(MAP_FILE, []); res.json({ ok: true }); });
+
+// --- GeoJSON proxy com cache em disco (evita CORS/instabilidade) ---
+async function cachedFetchGeo(url, filePath){
+  // se já existe em disco, serve do cache
+  if (fs.existsSync(filePath)) {
+    try {
+      const data = fs.readFileSync(filePath, 'utf8');
+      return JSON.parse(data);
+    } catch {}
+  }
+  // baixa (Node 18+ tem fetch nativo)
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`Falha ao baixar ${url}`);
+  const gj = await r.json();
+  fs.writeFileSync(filePath, JSON.stringify(gj));
+  return gj;
+}
+
+app.get('/api/geo/brazil', async (_req, res) => {
+  try {
+    const url = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson';
+    const gj  = await cachedFetchGeo(url, GJ_BR_FILE);
+    res.json(gj);
+  } catch (e) {
+    res.status(500).json({ error: 'brazil geojson fetch failed' });
+  }
+});
+
+app.get('/api/geo/us', async (_req, res) => {
+  try {
+    const url = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/united-states.geojson';
+    const gj  = await cachedFetchGeo(url, GJ_US_FILE);
+    res.json(gj);
+  } catch (e) {
+    res.status(500).json({ error: 'us geojson fetch failed' });
+  }
+});
 
 // 404 → home
 app.use((_, res) => res.redirect('/'));
