@@ -1,168 +1,115 @@
-// Our Travels – mapa mundial interativo (Leaflet)
-// Pinta países tocando/clicando, salva no localStorage, exporta/importa JSON.
+// public/js/travel.js
+// Borda SEMPRE visível; ao clicar: preenche, mantém borda e incrementa/decrementa contador + persiste no JSON.
 
 (function(){
-    const MAP_ID = 'map';
-    const LS_KEY = '24ever_travel_visited_v1';
-    const visited = new Set(JSON.parse(localStorage.getItem(LS_KEY) || '[]'));
-    const visitedCountEl = document.getElementById('visitedCount');
-  
-    const mapEl = document.getElementById(MAP_ID);
-    if (!mapEl) return;
-  
-    // ---- Inicializa mapa (sem tiles, fundo clean) ----
-    const map = L.map(MAP_ID, {
-      zoomControl: true,
-      attributionControl: false,
-      worldCopyJump: true
-    });
-  
-    // Fundo neutro (sem tiles) – só uma camada branca translúcida
-    const bg = L.rectangle([[-90,-180],[90,180]], {
-      color: '#ffffff', weight: 0, fillOpacity: 0.0
-    }).addTo(map);
-  
-    // Ajuste inicial pra ver o mundo
-    map.fitWorld({ animate: false, padding: [20,20] });
-  
-    // ---- Estilos ----
-    const colorVisited = '#ec4899';
-    const colorBorder = '#ffffff';
-    const colorDefault = '#e5e7eb';
-  
-    function styleFor(feature){
-      const id = countryId(feature);
-      const isVisited = visited.has(id);
-      return {
-        weight: 0.6,
-        color: colorBorder,
-        opacity: 1,
-        fillColor: isVisited ? colorVisited : colorDefault,
-        fillOpacity: isVisited ? 0.85 : 0.6
-      };
-    }
-  
-    function countryId(feature){
-      // tenta vários campos comuns pra id estável
-      const p = feature.properties || {};
-      return p.iso_a3 || p.ISO_A3 || p.adm0_a3 || p.gu_a3 || p.name || p.ADMIN || p.NAME || String(feature.id || '').trim();
-    }
-    function countryName(feature){
-      const p = feature.properties || {};
-      return p.name || p.ADMIN || p.NAME || p.sovereignt || p.formal_en || p.geounit || countryId(feature) || 'País';
-    }
-  
-    // ---- Eventos por país ----
-    function onEach(feature, layer){
-      layer.on({
-        click: () => toggleCountry(feature, layer),
-        mouseover: () => layer.setStyle({ fillOpacity: styleFor(feature).fillOpacity + 0.08 }),
-        mouseout: () => layer.setStyle(styleFor(feature)),
-        // Toque mais confortável no iPhone
-        touchstart: (e) => { e.originalEvent.preventDefault?.(); toggleCountry(feature, layer); }
-      });
-      layer.bindTooltip(countryName(feature), {sticky:true, direction:'center', className:'leaflet-tooltip-own'});
-    }
-  
-    function toggleCountry(feature, layer){
-      const id = countryId(feature);
-      if (!id) return;
-      if (visited.has(id)) visited.delete(id); else visited.add(id);
-      layer.setStyle(styleFor(feature));
-      persist();
-      updateCounter();
-    }
-  
-    function persist(){
-      localStorage.setItem(LS_KEY, JSON.stringify(Array.from(visited)));
-    }
-    function updateCounter(){
-      visitedCountEl && (visitedCountEl.textContent = String(visited.size));
-    }
-  
-    // ---- Carrega GeoJSON (com fallback de fontes) ----
-    (async function loadData(){
-      const sources = [
-        // cdn jsDelivr com países (GeoJSON leve, inclui nomes/ISO)
-        'https://cdn.jsdelivr.net/gh/johan/world.geo.json@master/countries.geo.json',
-        // alternativa (outro mirror)
-        'https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json',
-      ];
-      let data = null;
-      for (const url of sources){
-        try{
-          const r = await fetch(url, {cache:'no-store'});
-          if (r.ok){
-            data = await r.json();
-            break;
-          }
-        }catch(_){}
-      }
-      if (!data){
-        // fallback mínimo caso tudo falhe: desenha só o retângulo do mundo
-        console.warn('Falha ao baixar GeoJSON. Mostrando fundo simples.');
-        updateCounter();
-        return;
-      }
-  
-      // Ajuste de CRS/geo se necessário
-      const layer = L.geoJSON(data, {
-        style: styleFor,
-        onEachFeature: onEach
-      }).addTo(map);
-  
-      // melhora o ajuste ao conteúdo
-      try { map.fitBounds(layer.getBounds(), {padding:[10,10]}); } catch(_){}
-  
-      updateCounter();
-    })();
-  
-    // ---- Botões: reset/export/import ----
-    const btnReset = document.getElementById('btnReset');
-    const btnExport = document.getElementById('btnExport');
-    const btnImport = document.getElementById('btnImport');
-    const importBox = document.getElementById('importBox');
-    const importText = document.getElementById('importText');
-    const confirmImport = document.getElementById('confirmImport');
-    const cancelImport = document.getElementById('cancelImport');
-  
-    btnReset?.addEventListener('click', ()=>{
-      if (!confirm('Tem certeza que quer limpar tudo?')) return;
-      visited.clear();
-      persist();
-      // recarrega para reflitar estilos rapidamente
-      location.reload();
-    });
-  
-    btnExport?.addEventListener('click', ()=>{
-      const json = JSON.stringify(Array.from(visited), null, 2);
-      // copia pro clipboard (quando disponível)
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(json).catch(()=>{});
-      }
-      // mostra também num prompt pra facilitar
-      alert('IDs copiados para a área de transferência (se permitido). Abaixo o JSON:\n\n' + json);
-    });
-  
-    btnImport?.addEventListener('click', ()=>{
-      importBox?.classList.add('show');
-      importText?.focus();
-    });
-    cancelImport?.addEventListener('click', ()=>{
-      importBox?.classList.remove('show');
-      importText.value = '';
-    });
-    confirmImport?.addEventListener('click', ()=>{
+  const visited = new Set();
+  const counter  = document.getElementById('visitedCount');
+  const resetBtn = document.getElementById('btnReset');
+
+  // BORDA (stroke) + FILL consistentes
+  const styleNormal  = { color:'#ec4899', weight:2, fill:true, fillColor:'#fbcfe8', fillOpacity:.18, lineJoin:'round' };
+  const styleVisited = { color:'#ec4899', weight:3, fill:true, fillColor:'#ec4899', fillOpacity:.72, lineJoin:'round' };
+
+  const BR_URL = '/api/geo/brazil';
+  const US_URL = '/api/geo/us';
+
+  const BR_UF_BY_NAME = {
+    "Acre":"AC","Alagoas":"AL","Amapá":"AP","Amazonas":"AM","Bahia":"BA","Ceará":"CE","Distrito Federal":"DF","Espírito Santo":"ES",
+    "Goiás":"GO","Maranhão":"MA","Mato Grosso":"MT","Mato Grosso do Sul":"MS","Minas Gerais":"MG","Pará":"PA","Paraíba":"PB","Paraná":"PR",
+    "Pernambuco":"PE","Piauí":"PI","Rio de Janeiro":"RJ","Rio Grande do Norte":"RN","Rio Grande do Sul":"RS","Rondônia":"RO","Roraima":"RR",
+    "Santa Catarina":"SC","São Paulo":"SP","Sergipe":"SE","Tocantins":"TO"
+  };
+  const normalize = s => String(s||'').normalize('NFD').replace(/\p{Diacritic}/gu,'');
+
+  function stateIdFrom(feature){
+    const p = feature?.properties || {};
+    const admin = (p.country || p.admin || '').toString().toUpperCase();
+    const isBR  = admin.includes('BRA');
+    const isUS  = admin.includes('UNITED');
+    const name  = p.name || p.state_name || p.state || '';
+    const code  = (p.state_code || p.code || p.postal || '').toString().toUpperCase();
+    if (isUS) return `US-${(code || normalize(name).slice(0,2)).toUpperCase()}`;
+    if (isBR) return `BR-${(BR_UF_BY_NAME[name] || code || normalize(name).slice(0,2)).toUpperCase()}`;
+    return `XX-${Math.random().toString(36).slice(2,7)}`;
+  }
+
+  function renderCount(){ if (counter) counter.textContent = String(visited.size); }
+
+  // Mapa
+  const map = L.map('map', { zoomControl:true, scrollWheelZoom:true });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OpenStreetMap' }).addTo(map);
+  map.setView([10,-30], 3);
+  setTimeout(()=>map.invalidateSize(), 100);
+
+  function paint(layer, id){
+    layer.setStyle(visited.has(id)? styleVisited : styleNormal);
+    if (visited.has(id) && layer.bringToFront) layer.bringToFront();
+  }
+
+  function toggle(id, layer){
+    if (visited.has(id)) visited.delete(id); else visited.add(id);
+    paint(layer, id);
+    renderCount();
+    return visited.has(id);
+  }
+
+  function wire(feature, layer){
+    const id   = stateIdFrom(feature);
+    const name = feature?.properties?.name || feature?.properties?.state_name || 'Estado';
+    layer.options.interactive = true;
+    layer.options.fill = true;
+
+    // borda visível desde o início
+    paint(layer, id);
+    layer.bindTooltip(name, {sticky:true, direction:'auto'});
+
+    // clique/touch
+    layer.on('click', async ()=>{
+      const nowVisited = toggle(id, layer);
       try{
-        const arr = JSON.parse(importText.value || '[]');
-        if (!Array.isArray(arr)) throw new Error('Formato inválido');
-        visited.clear();
-        arr.forEach(id=>visited.add(String(id)));
-        persist();
-        location.reload();
-      }catch(e){
-        alert('JSON inválido. Cole exatamente o que foi exportado.');
+        await fetch('/api/map/states', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ id, visited: nowVisited })
+        });
+      }catch{
+        // reverte em caso de erro de persistência
+        toggle(id, layer);
       }
     });
-  })();
-  
+  }
+
+  async function load(){
+    // estados salvos
+    try {
+      (await fetch('/api/map/states', {cache:'no-store'}).then(r=>r.json())).forEach(x=>visited.add(x));
+    } catch {}
+    renderCount();
+
+    // geojsons
+    const [gjBR, gjUS] = await Promise.all([
+      fetch(BR_URL).then(r=>r.json()),
+      fetch(US_URL).then(r=>r.json())
+    ]);
+
+    const layerBR = L.geoJSON(gjBR, { onEachFeature: wire });
+    const layerUS = L.geoJSON(gjUS, { onEachFeature: wire });
+
+    const grp = L.featureGroup([layerBR, layerUS]).addTo(map);
+    map.fitBounds(grp.getBounds(), { padding:[20,20] });
+
+    // repinta após fitBounds (garante borda/fill corretos)
+    layerBR.eachLayer(l => paint(l, stateIdFrom(l.feature)));
+    layerUS.eachLayer(l => paint(l, stateIdFrom(l.feature)));
+  }
+
+  resetBtn?.addEventListener('click', async ()=>{
+    if (!visited.size) return;
+    try{
+      await fetch('/api/map/clear', { method:'POST' });
+      visited.clear(); renderCount(); load();
+    }catch{}
+  }, {passive:true});
+
+  load();
+})();
