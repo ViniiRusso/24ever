@@ -9,6 +9,8 @@
   <title>24ever — since 24/10/2022</title>
 
   <link rel="stylesheet" href="/styles.css" />
+  <!-- hotfix iOS (remove content-visibility/contain nos slides) -->
+  <link rel="stylesheet" href="/css/ios-hotfix.css" />
   <script src="https://cdn.tailwindcss.com"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,13 +19,13 @@
   <link rel="stylesheet" href="https://unpkg.com/aos@2.3.1/dist/aos.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
 
-  <!-- Preload das 6 primeiras (acelera LCP e “voltar”) -->
-  <link rel="preload" as="image" href="/images/timeline/foto1.jpg" fetchpriority="high">
-  <link rel="preload" as="image" href="/images/timeline/foto2.jpg" fetchpriority="high">
-  <link rel="preload" as="image" href="/images/timeline/foto3.jpg" fetchpriority="high">
-  <link rel="preload" as="image" href="/images/timeline/foto4.jpg">
-  <link rel="preload" as="image" href="/images/timeline/foto5.jpg">
-  <link rel="preload" as="image" href="/images/timeline/foto6.jpg">
+  <!-- Preload LCP (as 3 primeiras) + prefetch de próximas -->
+  <link rel="preload" as="image" href="/images/timeline/foto1.jpg" imagesrcset="/images/timeline/foto1.jpg" fetchpriority="high">
+  <link rel="preload" as="image" href="/images/timeline/foto2.jpg" imagesrcset="/images/timeline/foto2.jpg" fetchpriority="high">
+  <link rel="preload" as="image" href="/images/timeline/foto3.jpg" imagesrcset="/images/timeline/foto3.jpg" fetchpriority="high">
+  <link rel="prefetch" as="image" href="/images/timeline/foto4.jpg">
+  <link rel="prefetch" as="image" href="/images/timeline/foto5.jpg">
+  <link rel="prefetch" as="image" href="/images/timeline/foto6.jpg">
 
   <style> body{font-family:Poppins,system-ui,Arial} </style>
 </head>
@@ -84,13 +86,18 @@
     </section>
   </main>
 
+  <!-- libs -->
   <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+
+  <!-- app -->
   <script src="/js/navbar.js"></script>
   <script src="/js/timeline.js"></script>
   <script src="/js/main.js"></script>
-  <!-- registra o Service Worker (para manter imagens e JS no cache ao voltar) -->
+
+  <!-- SW (cache de imagens; melhora “voltar para Home”) -->
   <script src="/js/sw-register.js"></script>
+
   <script>AOS.init({ once:true, duration:800 });</script>
 </body>
 </html>

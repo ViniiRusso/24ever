@@ -1,0 +1,13 @@
+/* Hotfix iOS/Safari: evitar que slides “sumam”.
+   Remove content-visibility/contain e hints agressivos que atrapalham o WebKit. */
+
+   @supports (-webkit-touch-callout: none) {
+    #timeline .swiper-slide {
+      content-visibility: visible !important;
+      contain: none !important;
+    }
+    .timeline-card img {
+      will-change: auto !important;
+      transform: none !important;
+    }
+  }
