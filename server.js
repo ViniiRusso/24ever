@@ -1,4 +1,5 @@
-// server.js — login primeiro; sessão atrás de proxy (Render); assets públicos
+// server.js — apenas COLE por cima do seu arquivo atual
+
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -17,20 +18,14 @@ const __dirname  = path.dirname(__filename);
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-app.set('trust proxy', 1); // Render/Cloudflare
+app.set('trust proxy', 1);
 
-// ── Canonical: força HTTPS e WWW no domínio final
+// Canonical HTTPS + www
 const CANON_HOST = 'www.24ever.com.br';
 app.use((req, res, next) => {
   const host = req.headers.host || '';
-  // força https
-  if (!req.secure) {
-    return res.redirect(301, `https://${host}${req.originalUrl}`);
-  }
-  // força www
-  if (host !== CANON_HOST) {
-    return res.redirect(301, `https://${CANON_HOST}${req.originalUrl}`);
-  }
+  if (!req.secure) return res.redirect(301, `https://${host}${req.originalUrl}`);
+  if (host !== CANON_HOST) return res.redirect(301, `https://${CANON_HOST}${req.originalUrl}`);
   next();
 });
 
@@ -39,7 +34,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(compression());
 
-// ── Sessão
+// Sessão
 const SESSION_SECRET = process.env.SESSION_SECRET || 'please-change-this-secret';
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -57,21 +52,18 @@ app.use(session({
   }
 }));
 
-// ── Assets públicos ANTES do login
+// Assets públicos (imagens liberadas antes do login)
 const ASSET_EXT = /\.(css|js|mjs|png|jpg|jpeg|webp|gif|svg|ico|woff2?|map)$/i;
 
-// 1) rota dedicada para IMAGENS (garante /images/** sempre público, cache forte)
 app.use('/images', express.static(path.join(__dirname, 'public', 'images'), {
   setHeaders(res, filePath) {
     if (/\.(?:jpg|jpeg|png|webp|gif|svg)$/i.test(filePath)) {
-      // Cache muito agressivo nas imagens estáticas (com immutable)
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     }
   },
   index: false,
 }));
 
-// 2) demais assets públicos por extensão (css/js/woff etc) com cache forte
 app.use((req, res, next) => {
   if (ASSET_EXT.test(req.path)) {
     return express.static(path.join(__dirname, 'public'), {
@@ -86,15 +78,15 @@ app.use((req, res, next) => {
   next();
 });
 
-// (opcional) desabilita cache para HTML (evita colar telas antigas)
+// evita cache de HTML
 app.use((req, res, next) => {
-  if (req.method === 'GET' && req.headers.accept && req.headers.accept.includes('text/html')) {
+  if (req.method === 'GET' && (req.headers.accept || '').includes('text/html')) {
     res.setHeader('Cache-Control', 'no-store');
   }
   next();
 });
 
-// ── Login (público)
+// Login público
 app.get('/login', (req, res) => {
   if (req.session.userId) return res.redirect('/');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -127,17 +119,17 @@ app.post('/logout', (req, res) => {
   });
 });
 
-// ── Protege o restante
+// Proteção
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.redirect('/login');
   next();
 }
 app.use(requireAuth);
 
-// ── Estáticos (depois de logado)
+// Estáticos pós-login
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
-// ── Páginas
+// Páginas
 app.get('/',        (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/games',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'games.html')));
 app.get('/map',     (_, res) => res.sendFile(path.join(__dirname, 'public', 'map.html')));
@@ -145,7 +137,7 @@ app.get('/calendar',(_, res) => res.sendFile(path.join(__dirname, 'public', 'cal
 app.get('/notes',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'notes.html')));
 app.get('/links',   (_, res) => res.sendFile(path.join(__dirname, 'public', 'links.html')));
 
-// ── DATA
+// DATA
 const DATA_DIR = process.env.DATA_DIR || '/opt/render/project/src/data';
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const EVENTS_FILE = path.join(DATA_DIR, 'events.json');
@@ -156,7 +148,7 @@ for (const f of [EVENTS_FILE, NOTES_FILE, MAP_FILE]) if (!fs.existsSync(f)) fs.w
 const readJSON  = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return []; } };
 const writeJSON = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2));
 
-// ── APIs
+// APIs
 app.get('/api/events', (_req, res) => res.json(readJSON(EVENTS_FILE)));
 app.post('/api/events', (req, res) => {
   const { id, title, start, end, allDay } = req.body || {};
@@ -172,18 +164,19 @@ app.delete('/api/events/:id', (req, res) => {
 
 app.get('/api/notes', (_req, res) => res.json(readJSON(NOTES_FILE)));
 app.post('/api/notes', (req, res) => {
-  const { text } = req.body || {};
-  if (!text) return res.status(400).json({ error: 'missing text' });
+  // 👇 ACEITA string vazia; só recusa quando for undefined
+  const { text } = req.body ?? {};
+  if (text === undefined) return res.status(400).json({ error: 'missing text' });
   const notes = readJSON(NOTES_FILE);
-  const note = { id: crypto.randomUUID(), text, ts: Date.now() };
+  const note = { id: crypto.randomUUID(), text: String(text), ts: Date.now() };
   notes.unshift(note); writeJSON(NOTES_FILE, notes); res.json(note);
 });
 app.patch('/api/notes/:id', (req, res) => {
   const notes = readJSON(NOTES_FILE);
   const i = notes.findIndex(n => n.id === req.params.id);
   if (i === -1) return res.status(404).json({ error: 'not found' });
-  notes[i].text = req.body.text ?? notes[i].text;
-  notes[i].ts   = Date.now();
+  if (req.body.text !== undefined) notes[i].text = String(req.body.text);
+  notes[i].ts = Date.now();
   writeJSON(NOTES_FILE, notes); res.json(notes[i]);
 });
 app.delete('/api/notes/:id', (req, res) => {
@@ -200,7 +193,7 @@ app.post('/api/map/states', (req, res) => {
   const arr = [...set]; writeJSON(MAP_FILE, arr); res.json(arr);
 });
 
-// 404 → home (protegida)
+// 404 → home
 app.use((_, res) => res.redirect('/'));
 
 // start
