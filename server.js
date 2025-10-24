@@ -1,4 +1,4 @@
-// server.js — apenas COLE por cima do seu arquivo atual
+// server.js — COLE por cima do seu arquivo atual
 
 import express from 'express';
 import path from 'path';
@@ -164,7 +164,7 @@ app.delete('/api/events/:id', (req, res) => {
 
 app.get('/api/notes', (_req, res) => res.json(readJSON(NOTES_FILE)));
 app.post('/api/notes', (req, res) => {
-  // 👇 ACEITA string vazia; só recusa quando for undefined
+  // aceita string vazia; só recusa undefined
   const { text } = req.body ?? {};
   if (text === undefined) return res.status(400).json({ error: 'missing text' });
   const notes = readJSON(NOTES_FILE);
@@ -191,6 +191,11 @@ app.post('/api/map/states', (req, res) => {
   const set = new Set(readJSON(MAP_FILE));
   visited ? set.add(id) : set.delete(id);
   const arr = [...set]; writeJSON(MAP_FILE, arr); res.json(arr);
+});
+// limpar tudo (RESET)
+app.post('/api/map/clear', (_req, res) => {
+  writeJSON(MAP_FILE, []);
+  res.json({ ok: true });
 });
 
 // 404 → home

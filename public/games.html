@@ -2,48 +2,35 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="format-detection" content="telephone=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>24ever — Games</title>
-
   <link rel="stylesheet" href="/styles.css" />
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
   <style>
-    canvas{ -webkit-user-select:none; user-select:none; touch-action:none; }
+    canvas{ -webkit-user-select:none; user-select:none; touch-action:none; image-rendering: pixelated; }
+    .canvas-wrap{width:100%;max-width:420px;}
+    .canvas-fluid{width:100%;height:auto;}
   </style>
 </head>
 <body class="pb-24">
-  <div class="blob b1"></div><div class="blob b2"></div>
-
-  <!-- NAVBAR unificada -->
   <nav class="nav fixed top-0 left-0 right-0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="/" class="brand">24ever</a>
       <button class="hamb" aria-label="Abrir menu" aria-expanded="false"><span></span><span></span><span></span></button>
       <div class="links">
-        <a href="/">Home</a>
-        <a href="/games">Games</a>
-        <a href="/map">Our Map</a>
-        <a href="/notes">Notes</a>
-        <a href="/calendar">Our Calendar</a>
-        <a href="/links">Links</a>
+        <a href="/">Home</a><a href="/games">Games</a><a href="/calendar">Calendar</a><a href="/map">Our Map</a>
+        <a href="/notes">Notes</a><a href="/links">Links</a>
         <form action="/logout" method="post" class="logout"><button> sair </button></form>
       </div>
     </div>
   </nav>
   <aside id="drawer" class="drawer">
     <div class="drawer-inner">
-      <a href="/" class="drawer-link">Home</a>
-      <a href="/games" class="drawer-link">Games</a>
-      <a href="/map" class="drawer-link">Our Map</a>
-      <a href="/notes" class="drawer-link">Notes</a>
-      <a href="/calendar" class="drawer-link">Our Calendar</a>
-      <a href="/links" class="drawer-link">Links</a>
+      <a href="/" class="drawer-link">Home</a><a href="/games" class="drawer-link">Games</a>
+      <a href="/calendar" class="drawer-link">Calendar</a><a href="/map" class="drawer-link">Our Map</a>
+      <a href="/notes" class="drawer-link">Notes</a><a href="/links" class="drawer-link">Links</a>
       <form action="/logout" method="post"><button class="drawer-link">sair</button></form>
     </div>
   </aside>
@@ -52,7 +39,7 @@
     <header class="flex items-end justify-between mb-6">
       <div>
         <h1 class="text-3xl font-extrabold">24ever Arcade</h1>
-        <p class="text-sm text-gray-600 mt-1">Toques suaves, sem zoom, e tudo fluido no iPhone ✨</p>
+        <p class="text-sm text-gray-600 mt-1">Toques suaves, sem zoom, tudo fluido no iPhone ✨</p>
       </div>
     </header>
 
@@ -65,16 +52,13 @@
             <span class="text-gray-500">Score:</span> <span id="score2048" class="font-bold">0</span>
           </div>
         </div>
-
         <div class="canvas-wrap">
           <canvas id="game2048" width="360" height="360" class="mt-3 border rounded-xl hidden canvas-fluid"></canvas>
         </div>
-
         <div class="flex items-center gap-3 mt-3">
           <button id="btn2048" class="btn">Jogar 2048</button>
           <span class="text-xs text-gray-500 desktop-only">Setas para mover</span>
         </div>
-
         <div class="ctrl-bar mobile-only">
           <button class="ctrl-btn" data-2048="left">←</button>
           <button class="ctrl-btn" data-2048="up">↑</button>
@@ -121,14 +105,13 @@
     </div>
   </main>
 
-
   <script>
-    /* Bloqueia double-tap zoom no iOS dentro da página de jogos */
-    let __lastTouch = 0;
+    /* Bloqueia double-tap zoom globalmente nos jogos */
+    let lastTouch = 0;
     document.addEventListener('touchend', (e)=>{
       const now = Date.now();
-      if (now - __lastTouch < 350) { e.preventDefault(); }
-      __lastTouch = now;
+      if (now - lastTouch < 350) { e.preventDefault(); }
+      lastTouch = now;
     }, {passive:false});
   </script>
   <script src="/js/navbar.js"></script>
